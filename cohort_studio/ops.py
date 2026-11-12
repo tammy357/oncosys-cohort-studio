@@ -153,6 +153,11 @@ def filter_column(df, column, cmp, value):
         keep = keep.fillna(False)
     elif cmp == "is_event":
         keep = pd.to_numeric(col, errors="coerce") == 1
+    elif cmp == "in_raw":
+        # Exact raw values, including ones is_missing() treats as missing (e.g. HER2 'Equivocal').
+        wanted = {str(v).strip().lower() for v in value}
+        keep = col.map(lambda x: x is not None and not (isinstance(x, float) and pd.isna(x))
+                       and str(x).strip().lower() in wanted)
     else:
         raise ValueError(f"Unknown comparison '{cmp}'")
     return df[keep.astype(bool)].copy()
@@ -173,7 +178,7 @@ def one_row_per_sample(df):
     return df.drop_duplicates(subset=["sample_id"]).copy()
 
 
-SAMPLE_TYPE_PRIORITY = ["Primary Tumor", "Metastatic", "Solid Tissue Normal"]
+SAMPLE_TYPE_PRIORITY =["Primary Tumor", "Metastatic", "Solid Tissue Normal"]
 
 
 def one_sample_per_patient(df, rule="priority", order=None, time_column=None):
@@ -213,6 +218,28 @@ def one_sample_per_patient(df, rule="priority", order=None, time_column=None):
     out = df[df["sample_id"].isin(reasons)].copy()
     out["selection.reason"] = out["sample_id"].map(reasons)
     return out
+
+
+# ---- steps used by the AI assistant and the advanced search (the rule parser never writes these) ----
+def exclude_layer(df, layer):
+    """Keep samples that do NOT have this data layer (e.g. 'RNA but no protein data')."""
+    return df[~df[LAYER_COLUMNS[layer]]].copy()
+
+
+def normal_samples_with_layers(manifest, layers):
+    """Normal-tissue samples that also have every data layer in `layers`."""
+    n = manifest[manifest["sample_type"] == "Solid Tissue Normal"]
+    for layer in layers or []:
+        n = n[n[LAYER_COLUMNS[layer]]]
+    return n[["sample_id", "patient_id"]].copy()
+
+
+def filter_any(df, conditions):
+    """Keep rows that meet at least one condition. conditions: [(column, cmp, value), ...]."""
+    keep = pd.Series(False, index=df.index)
+    for column, cmp, value in conditions:
+        keep |= df.index.isin(filter_column(df, column, cmp, value).index)
+    return df[keep].copy()
 
 
 def cohort_sample_ids(df, extra_columns=()):

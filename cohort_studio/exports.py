@@ -153,6 +153,8 @@ def reproduce_script(result, store):
             t = s["table"]
             if t == "slides":
                 lines.append(f"right = slides_of_kind(load_slides(DATA), {list(s.get('slide_kinds') or [])!r})")
+            elif t == "normals" and s.get("require_layers"):
+                lines.append(f"right = normal_samples_with_layers(load_manifest(DATA), {list(s['require_layers'])!r})")
             elif t == "normals":
                 lines.append("right = normal_samples(load_manifest(DATA))")
             else:
@@ -176,6 +178,12 @@ def reproduce_script(result, store):
             time_col = (f"{PREFIX['clinical']}.{store.resolve_field('clinical', 'collection_day')}"
                         if rule in ("earliest", "latest") else None)
             lines.append(f"df = one_sample_per_patient(df, {rule!r}, {s.get('order')!r}, {time_col!r})")
+        elif op == "exclude_layer":
+            lines.append(f"df = exclude_layer(df, {s['layer']!r})")
+        elif op == "any_of":
+            conds = [(PREFIX[s["table"]] + "." + store.resolve_field(s["table"], c["field"]), c["cmp"], c.get("value"))
+                     for c in s["conditions"]]
+            lines.append(f"df = filter_any(df, {conds!r})")
         lines.append(f"print(f'Step {i}: {{len(df)}} rows, {{df.sample_id.nunique()}} samples, {{df.patient_id.nunique()}} patients')")
     lines += [
         "",

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-theme="light" class="preload">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cohort Studio</title>
+  <meta name="description" content="Build a TCGA-BRCA cohort from plain English, with every sample accounted for.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/static/app.css">
+  <script>
+    try { var t = localStorage.getItem('cs-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    setTimeout(function () { document.documentElement.classList.remove('preload'); }, 2200);
+  </script>
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js" } }</script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+  <canvas id="specimen" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="topbar" id="topbar">
+    <a class="wordmark" href="/" aria-label="Cohort Studio, home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14.5" class="mark-ring"/><circle cx="13.5" cy="17" r="6.2" class="mark-haem"/><circle cx="20.5" cy="11.5" r="2.6" class="mark-eosin"/></svg>
+      <span class="wm-name">Cohort Studio</span>
+      <span class="wm-meta">TCGA-BRCA</span>
+    </a>
+    <nav class="nav" aria-label="Pages">
+      <a href="/" aria-current="page"><i data-lucide="filter"></i><span>Build</span></a>
+      <a href="/compare"><i data-lucide="git-compare"></i><span>Compare</span></a>
+    </nav>
+    <div class="top-right">
+      <span id="ai-status" class="status"><i class="status-dot"></i><span class="status-k">Model</span><span id="ai-model">…</span></span>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch colour theme"><i data-lucide="moon"></i></button>
+      <label class="user-field" title="Your history and favourites are kept under this name">
+        <i data-lucide="user-round"></i><input id="user" autocomplete="off" spellcheck="false" aria-label="Your name">
+      </label>
+    </div>
+  </header>
+
+  <section class="hero" id="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">TCGA-BRCA · Frozen event release · Research use only</p>
+      <h1 class="headline"><span class="line"><span>Every sample,</span></span><span class="line"><span><em>accounted for.</em></span></span></h1>
+      <p class="lead" id="lead">Describe a cohort in plain English. Cohort Studio drafts it from the release's real fields and values,
+        asks when a choice would change who's in, and shows where every one of its samples went.</p>
+      <form id="search-form" class="search" autocomplete="off" role="search">
+        <i data-lucide="search" class="search-ico"></i>
+        <input id="q" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest-list"
+               aria-label="Describe a cohort" placeholder="e.g. ER-positive tumours with RNA data">
+        <button type="submit" class="btn ink"><span>Build cohort</span><i data-lucide="corner-down-left"></i></button>
+        <ul id="suggest-list" class="suggest" role="listbox" hidden></ul>
+      </form>
+      <div class="search-meta">
+        <label class="toggle"><input type="checkbox" id="use-ai" checked><span class="toggle-track"></span><span>AI assistant</span></label>
+        <button type="button" id="open-advanced" class="text-link">Advanced search <i data-lucide="arrow-right"></i></button>
+        <span class="hint"><kbd>/</kbd> to search</span>
+        <span id="ai-note" class="ai-note"></span>
+      </div>
+    </div>
+    <dl class="figures" id="figures"></dl>
+    <figure class="legend" id="legend" aria-label="What the background shows"></figure>
+  </section>
+
+  <main id="main">
+    <section class="method" aria-label="How it works">
+      <div class="method-col"><span class="num">01</span><h3>Describe</h3><p>Write the cohort the way you'd say it. Autocomplete knows every field and value in this release.</p></div>
+      <div class="method-col"><span class="num">02</span><h3>Decide</h3><p>If a choice would change who's in, you're asked, with the number of samples each answer gives.</p></div>
+      <div class="method-col"><span class="num">03</span><h3>Defend</h3><p>A flow diagram of every exclusion, a check for double counts, a verdict, and a script that rebuilds it exactly.</p></div>
+    </section>
+
+    <section class="block" id="specimens-block">
+      <header class="block-head">
+        <span class="block-num">01</span>
+        <h2>Ready-made cohorts</h2>
+        <p>Each one exercises a different check. Curves show real sample counts after every step.</p>
+      </header>
+      <div class="specimens" id="specimens"></div>
+    </section>
+
+    <section class="block" id="favorites-block" hidden>
+      <header class="block-head"><span class="block-num">02</span><h2>Favourites</h2><p>Saved cohorts rerun their exact steps, with no model call.</p></header>
+      <div class="favs" id="favorites"></div>
+    </section>
+
+    <section class="notebook" id="notebook" hidden>
+      <header class="block-head"><span class="block-num">Session</span><h2>Notebook</h2><p id="session-date"></p></header>
+      <div id="thread" class="thread" aria-live="polite"></div>
+    </section>
+
+    <section class="block" id="archive-block">
+      <header class="block-head">
+        <span class="block-num">03</span>
+        <h2>Your cohorts</h2>
+        <input id="history-filter" class="filter" placeholder="Filter by words or verdict" aria-label="Filter your cohorts">
+      </header>
+      <div id="history" class="archive"></div>
+    </section>
+
+    <footer class="colophon">
+      <p>Research use only: no diagnosis, treatment recommendation or clinical claim. Counts come from the cohort engine
+        on the frozen files; the language model never sees patient-level data.</p>
+      <p>Data: TCGA Research Network via the UCSC Xena hub; curated survival from the TCGA Clinical Data Resource;
+        slides from NCI Imaging Data Commons (CC BY 3.0).</p>
+    </footer>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <dialog id="advanced" aria-labelledby="adv-title">
+    <div class="adv-shell">
+      <header class="adv-head">
+        <div>
+          <h2 id="adv-title">Advanced search</h2>
+          <p>Choose exact values. Counts are primary tumours in this release; the total on the right updates as you go.</p>
+        </div>
+        <button type="button" class="icon-btn" id="adv-close" aria-label="Close advanced search"><i data-lucide="x"></i></button>
+      </header>
+      <div class="adv-body">
+        <nav class="adv-nav" id="adv-nav" aria-label="Sections"></nav>
+        <div class="adv-main" id="adv-main"></div>
+        <aside class="adv-side" aria-live="polite">
+          <div>
+            <div class="label">Cohort so far</div>
+            <div class="live-n" id="adv-n">–</div>
+            <div class="live-sub" id="adv-sub">samples</div>
+            <div class="live-err" id="adv-err" hidden></div>
+          </div>
+          <div>
+            <div class="label" style="margin-bottom:8px">Criteria</div>
+            <ul class="crit" id="adv-crit"></ul>
+          </div>
+          <span class="spacer"></span>
+          <button type="button" class="btn ink" id="adv-build"><i data-lucide="list-checks"></i>Build the protocol</button>
+          <button type="button" class="btn ghost" id="adv-reset">Reset all</button>
+        </aside>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

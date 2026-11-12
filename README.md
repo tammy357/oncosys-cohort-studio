@@ -33,6 +33,9 @@ python -m cohort_studio --fields              # which fields and values exist in
 python -m pytest tests -q                     # tests (synthetic fixture + the real manifests)
 ```
 
+A conversational web app with AI questions, autocomplete, saved searches and favourites is in
+[frontend/](frontend/README.md): `pip install -r frontend/requirements.txt`, then `python frontend/server.py`.
+
 Requests that only use sample types, data layers and slides work straight from the committed manifests.
 Clinical, survival and mutation filters need `fetch.py` first; until then the tool says
 **Insufficient Evidence** and tells you which file is missing.
@@ -110,6 +113,11 @@ change the cohort.
 - **Off by default.** The built-in parser needs no key, so the tool runs from a fresh clone.
 - **When it's on,** the model only drafts the editable steps. It never sees patient-level data and never produces
   a number: every count comes from the engine running on the frozen files.
+- **Grounded, and it asks instead of guessing** (`cohort_studio/assistant/`). The model is given the release's
+  real fields, values and counts, and every step it writes is checked against the data. When a choice would
+  change the cohort (for example what "hormone-receptor positive" means), it asks, showing how many samples each
+  answer gives. The web app asks you; the Streamlit app and the CLI use the recommended answer and leave it for a
+  person to confirm.
 - **Keys come from the user:** paste your own key in the sidebar (not stored), or set `ANTHROPIC_API_KEY`.
 - **Local models work too,** through any OpenAI-compatible endpoint, e.g.
   `OPENAI_BASE_URL=http://localhost:11434/v1 COHORT_STUDIO_MODEL=llama3.1`.
@@ -138,7 +146,9 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 | `app.py` | Streamlit app |
 | `cohort_studio/ops.py` | The data operations, shared by the app and the exported script |
 | `cohort_studio/parse.py` | Plain English → steps, without AI |
-| `cohort_studio/llm.py` | Optional AI drafting (user's key or a local model) |
+| `cohort_studio/llm.py` | Optional AI drafting for the Streamlit app and CLI (user's key or a local model) |
+| `cohort_studio/assistant/` | The grounded AI route: release catalogue, prompt, step checks, questions with counts |
+| `frontend/` | Web app: FastAPI server, single-page interface, SQLite/Postgres storage |
 | `cohort_studio/engine.py` | Runs the steps, records the ledger, detects and fixes inflation, measures shift |
 | `cohort_studio/verdict.py` | The verdict and its checks |
 | `cohort_studio/exports.py` | `cohort_samples.csv`, reproduce script, findings.json and the rest |
@@ -148,4 +158,4 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 ## Third-party code
 
 pandas (BSD-3-Clause), Streamlit (Apache-2.0), Matplotlib (Matplotlib/PSF licence), jsonschema (MIT),
-pytest (MIT). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
+pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
