@@ -74,6 +74,10 @@ def parse_request(text, store=None):
 
     # --- PAM50 subtypes (before "normal" and "HER2") ---
     pam = []
+    # "luminal A or B": without this, "luminal A" matches and the lone "B" is silently dropped
+    if t.find(r"\blum(?:inal)?[- ]?([ab])\s*(?:,?\s*(?:and/or|or|and)|,|/|&)\s*(?:lum(?:inal)?[- ]?)?(?!\1)[ab]\b",
+              "PAM50 Luminal A or B"):
+        pam += ["LumA", "LumB"]
     for pattern, value, words in [
         (r"normal[- ]like", "Normal", "PAM50 Normal-like"),
         (r"her2[- ]?(?:enriched|e\b)", "Her2", "PAM50 HER2-enriched"),
@@ -90,16 +94,38 @@ def parse_request(text, store=None):
     elif t.find(r"pam50(?: subtypes?| calls?| labels?)?|molecular subtypes?|intrinsic subtypes?|rna subtypes?", "PAM50 subtype is recorded"):
         clin("pam50", "notnull", None, "")
 
+    # --- label source: the 2012 TCGA Nature paper's calls instead of the clinical record ---
+    nature = t.find(r"(?:(?:according to|based on|using|from|per)\s+)?(?:the\s+)?(?:20\s?12\s+)?(?:tcga\s+)?\bnature\b(?:\s+20\s?12)?"
+                    r"(?:\s+(?:paper|study|publication))?(?:'?s)?(?:\s+(?:labels?|calls?|status))?",
+                    "use the 2012 TCGA Nature paper's labels")
+
     # --- receptors ---
     if t.find(r"triple[- ]negative|\btnbc\b", "ER, PR and HER2 all negative (clinical)"):
         for f in ("er_status", "pr_status", "her2_status"):
             clin(f, "in", ["Negative"], "")
+
+    def receptor_field(name):
+        return ("er_status" if name in ("er", "estrogen receptor", "oestrogen receptor") else
+                "pr_status" if name in ("pr", "progesterone receptor") else "her2_status")
+
+    # One sign for a list: "negative for ER, PR and HER2", "ER and PR positive". Not "or" or "/":
+    # "ER or PR positive" usually means either one, which separate filters can't express.
+    rec = r"(?:er|pr|her2|her-2|estrogen receptor|oestrogen receptor|progesterone receptor)"
+    rec_list = rf"\b{rec}(?:\s*(?:,\s*(?:and\s+)?|&|\band\b)\s*{rec}\b)+"
+    for m in t.find(rf"\b(positive|negative) for ({rec_list}|\b{rec}\b)|({rec_list})\s*[- ]?\s*(positive|negative|\+|-(?![a-z]))"):
+        sign, names = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+        value = "Positive" if sign in ("+", "positive") else "Negative"
+        fields = list(dict.fromkeys(receptor_field(n) for n in re.findall(rec, names)))
+        t.understood.append({"phrase": m.group(0), "meaning": " and ".join(f.split("_")[0].upper() for f in fields)
+                             + f" {value.lower()} (clinical)"})
+        for f in fields:
+            clin(f, "in", [value], "")
+
     receptor_pattern = (r"\b(er|pr|her2|her-2|estrogen receptor|oestrogen receptor|progesterone receptor)"
                         r"\s*[- ]?\s*(?:status\s*)?(positive|negative|pos\b|neg\b|\+|-(?![a-z]))")
     for m in t.find(receptor_pattern):
         name, sign = m.group(1), m.group(2)
-        field = ("er_status" if name in ("er", "estrogen receptor", "oestrogen receptor") else
-                 "pr_status" if name in ("pr", "progesterone receptor") else "her2_status")
+        field = receptor_field(name)
         value = "Positive" if sign in ("+", "positive", "pos") else "Negative"
         t.understood.append({"phrase": m.group(0), "meaning": f"{field.split('_')[0].upper()} {value.lower()} (clinical)"})
         clin(field, "in", [value], "")
@@ -131,7 +157,11 @@ def parse_request(text, store=None):
     # --- pairing with normal tissue ---
     pair = t.find(r"(?:matched|paired)[- ]normals?(?:[- ]tissue)?(?: samples?)?|tumou?r[- /]normal pairs?|"
                   r"(?:with|have|has|having|plus|and)\s+(?:a\s+|their\s+|its\s+)?(?:matched\s+|matching\s+)?normal[- ]tissue samples?|"
-                  r"(?:with|have|has|having)\s+(?:a\s+|their\s+)?normal samples?|also have (?:a )?normal(?: samples?)?|normal samples? from the same patients?",
+                  # "where the same patient also contributed adjacent normal tissue", "with an adjacent normal sample"
+                  r"(?:(?:where|whose|in which)\s+)?(?:the\s+same\s+)?(?:patients?\s+)?(?:also\s+)?"
+                  r"(?:with|have|has|had|having|contributed|provided|donated)\s+(?:a\s+|an\s+|their\s+)?"
+                  r"(?:matched\s+|matching\s+|adjacent\s+)?normal(?:[- ]tissue)?(?: samples?)?(?:\s+from the same patients?)?|"
+                  r"normal(?:[- ]tissue)? samples? from the same patients?",
                   "a normal-tissue sample from the same patient")
     add_normals = bool(pair) and bool(re.search(r"pairs?|and their normal|plus (?:their |the )?normal|include (?:the |their )?normal|"
                                                 r"both (?:the )?tumou?r and (?:the )?normal", t.lower))
@@ -212,7 +242,9 @@ def parse_request(text, store=None):
         lo, hi = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
         t.understood.append({"phrase": m.group(0), "meaning": f"age at diagnosis {lo}-{hi}"})
         clin("age", "between", [int(lo), int(hi)], "")
-    age_rx = (r"(?:aged?\s*|(?:patients?|women|woman|men|man|people|cases|individuals)\s+(?:who are\s+|aged\s+)?)"
+    age_word = r"(?:aged?|age at (?:initial )?diagnosis(?: of)?)"
+    who = r"(?:patients?|women|woman|men|man|people|cases|individuals)"
+    age_rx = (rf"(?:{age_word}\s*|{who}\s+(?:who are\s+|aged\s+)?)"
               r"(over|above|older than|at least|>=|>|under|below|younger than|less than|at most|<=|<)\s*(\d{1,3})(?!\s*%)(?:\s*years?(?: old)?)?"
               r"|(over|above|older than|at least|>=|>|under|below|younger than|less than|at most|<=|<)\s*(\d{1,3})\s*(?:years?|yrs?)(?: old)?")
     for m in t.find(age_rx):
@@ -229,6 +261,21 @@ def parse_request(text, store=None):
             cmp, v = "lte", n
         t.understood.append({"phrase": m.group(0), "meaning": f"age at diagnosis {'≥' if cmp == 'gte' else '≤'} {v}"})
         clin("age", cmp, v, "")
+    # "50 or older", "40 and under", "aged 50+": the comparison comes after the number (both ends included).
+    # Without an age word in front, only "years" or older/younger make it an age ("2 or more slides" isn't).
+    words = r"older|over|above|up|more|younger|under|below|less"
+    years = r"(?:\s*years?(?: old)?)?"
+    age_after_rx = (rf"(?:{age_word}\s*|{who}\s+(?:aged\s+)?)(?P<n1>\d{{1,3}}){years}\s*(?:or|and)\s*(?P<w1>{words})\b{years}"
+                    rf"|(?<![\w.])(?P<n2>\d{{1,3}})(?:\s*years?(?: old)?\s*(?:or|and)\s*(?P<w2>{words})"
+                    rf"|\s*(?:or|and)\s*(?P<w3>older|younger))\b{years}"
+                    rf"|(?:{age_word}|{who})\s*(?P<n3>\d{{1,3}})\s*\+")
+    for m in t.find(age_after_rx):
+        n = int(m["n1"] or m["n2"] or m["n3"])
+        if n > 120:
+            continue
+        cmp = "lte" if (m["w1"] or m["w2"] or m["w3"]) in ("younger", "under", "below", "less") else "gte"
+        t.understood.append({"phrase": m.group(0), "meaning": f"age at diagnosis {'≥' if cmp == 'gte' else '≤'} {n}"})
+        clin("age", cmp, n, "")
 
     if t.find(r"(?:invasive |infiltrating )?ductal", "infiltrating ductal carcinoma"):
         clin("histology", "in", ["Infiltrating Ductal Carcinoma"], "")
@@ -238,10 +285,12 @@ def parse_request(text, store=None):
         clin("gender", "in", ["FEMALE"], "")
     if t.find(r"\b(?:male|men|man)\b", "recorded gender male"):
         clin("gender", "in", ["MALE"], "")
+    # "post (" / "pre (", not "post" / "pre": the labels read "Post (...)" and "Pre (...)", and a bare word
+    # would also match "Indeterminate (neither Pre or Postmenopausal)".
     if t.find(r"post[- ]?menopausal", "post-menopausal"):
-        clin("menopause", "contains", ["post"], "")
+        clin("menopause", "contains", ["post ("], "")
     if t.find(r"pre[- ]?menopausal", "pre-menopausal"):
-        clin("menopause", "contains", ["pre"], "")
+        clin("menopause", "contains", ["pre ("], "")
 
     # --- one sample per patient ---
     choose = None
@@ -261,6 +310,20 @@ def parse_request(text, store=None):
     if t.find(r"(?:(?:joined|join|matched|linked)\s+)?(?:by|on|using)(?: the)? patient(?: id| barcode)?s?|patient[- ]level", "join on the patient barcode"):
         key = "patient_id"
         notes.append("Joins use the patient barcode, as requested. Patients with several samples may be counted twice; the ledger will show it.")
+
+    if nature:
+        # same filters, read from the paper's columns (its PAM50 values are spelled out)
+        columns = {"er_status": "ER_Status_nature2012", "pr_status": "PR_Status_nature2012",
+                   "her2_status": "HER2_Final_Status_nature2012", "pam50": "PAM50_mRNA_nature2012"}
+        pam50_names = {"LumA": "Luminal A", "LumB": "Luminal B", "Her2": "HER2-enriched", "Basal": "Basal-like",
+                       "Normal": "Normal-like"}
+        switched = [f for f in clinical_filters if f["field"] in columns]
+        for f in switched:
+            if f["field"] == "pam50" and isinstance(f["value"], list):
+                f["value"] = [pam50_names.get(v, v) for v in f["value"]]
+            f["field"] = columns[f["field"]]
+        if not switched:
+            notes.append("The 2012 Nature paper's labels cover ER, PR, HER2 and PAM50; the request names none of them.")
 
     # --- assemble steps in a readable order ---
     steps = [{"op": "sample_type", "values": types}]

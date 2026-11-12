@@ -111,6 +111,82 @@ def test_triple_negative_is_blocked_for_size(store):
     assert verdict.evaluate(r, store).verdict == "Blocked"
 
 
+@pytest.mark.parametrize("request_text", ["luminal A or B tumours", "luminal B and A tumours", "luminal A/B tumours",
+                                          "luminal A, or B tumours", "luminal A and/or B tumours",
+                                          "luminal A or luminal B tumours", "luminal tumours"])
+def test_luminal_a_or_b_keeps_both(store, request_text):
+    [f] = [s for s in parse_request(request_text, store)["steps"] if s.get("field") == "pam50"]
+    assert f["value"] == ["LumA", "LumB"]
+
+
+@pytest.mark.parametrize("request_text, cmp, value", [
+    ("patients aged 50 or older", "gte", 50), ("age at diagnosis >= 50", "gte", 50), ("patients 50 and older", "gte", 50),
+    ("women aged 50+", "gte", 50), ("50 years or older", "gte", 50), ("aged 40 or younger", "lte", 40),
+    ("age at diagnosis under 40", "lte", 39), ("patients over 50", "gte", 51), ("patients younger than 40", "lte", 39)])
+def test_age_phrasings(request_text, cmp, value):
+    [f] = [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]
+    assert (f["cmp"], f["value"]) == (cmp, value)
+
+
+@pytest.mark.parametrize("request_text, expected", [
+    ("tumours negative for ER, PR and HER2", {"er_status": "Negative", "pr_status": "Negative", "her2_status": "Negative"}),
+    ("ER, PR and HER2 negative tumours", {"er_status": "Negative", "pr_status": "Negative", "her2_status": "Negative"}),
+    ("ER and PR positive, HER2 negative tumours", {"er_status": "Positive", "pr_status": "Positive", "her2_status": "Negative"}),
+    ("tumours positive for ER", {"er_status": "Positive"}),
+    ("ER-negative, PR-negative tumours", {"er_status": "Negative", "pr_status": "Negative"})])
+def test_one_sign_for_a_list_of_receptors(request_text, expected):
+    got = {s["field"]: s["value"][0] for s in parse_request(request_text)["steps"] if s.get("field", "").endswith("_status")}
+    assert got == expected
+
+
+def test_negative_for_er_pr_her2_is_triple_negative(store):
+    assert run_fixed(parse_request("tumours negative for ER, PR and HER2", store), store).cohort_ids == \
+        run_fixed(parse_request("triple negative tumours", store), store).cohort_ids
+
+
+@pytest.mark.parametrize("request_text", [
+    "primary tumours where the same patient also contributed adjacent normal tissue",
+    "tumours whose patient also has adjacent normal tissue",
+    "primary tumours with matching normal tissue from the same patient",
+    "tumours with an adjacent normal sample"])
+def test_patient_also_has_normal_tissue_is_a_pairing(store, request_text):
+    # tumours whose patient has a normal sample (patients 1-3), not the normal samples themselves
+    assert sorted(run_fixed(parse_request(request_text, store), store).cohort_ids) == ids(1, 2, 3)
+
+
+def test_tumours_and_normal_samples_keeps_both_sample_types(store):
+    spec = parse_request("primary tumours and adjacent normal samples", store)
+    assert set(spec["steps"][0]["values"]) == {"Primary Tumor", "Solid Tissue Normal"}
+    assert not [s for s in spec["steps"] if s.get("table") == "normals"]
+
+
+@pytest.mark.parametrize("request_text, expected", [
+    ("ER-positive tumours according to the 2012 TCGA Nature paper labels", {"ER_Status_nature2012": ["Positive"]}),
+    ("luminal A or B tumours per the Nature 2012 calls", {"PAM50_mRNA_nature2012": ["Luminal A", "Luminal B"]}),
+    ("ER-positive tumours", {"er_status": ["Positive"]}),
+    ("primary tumours with signature data", {})])
+def test_nature_2012_labels_switch_the_columns(request_text, expected):
+    assert {s["field"]: s["value"] for s in parse_request(request_text)["steps"] if s["op"] == "filter"} == expected
+
+
+@pytest.mark.skipif(not (REAL / "raw" / "clinical.tsv").exists(), reason="run data/tcga-brca/fetch.py first")
+def test_nature_2012_er_positive_on_real_data():
+    s = DataStore(REAL)
+    nature = run_fixed(parse_request("ER-positive tumours according to the 2012 TCGA Nature paper labels", s), s)
+    clinical = run_fixed(parse_request("ER-positive tumours", s), s)
+    assert (len(nature.cohort_ids), len(clinical.cohort_ids)) == (601, 808)
+
+
+@pytest.mark.parametrize("request_text", ["primary tumours with 2 or more slides", "HER2 3+ tumours"])
+def test_numbers_that_are_not_ages(request_text):
+    assert not [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]
+
+
+def test_single_luminal_subtype_still_works(store):
+    [f] = [s for s in parse_request("luminal B tumours", store)["steps"] if s.get("field") == "pam50"]
+    assert f["value"] == ["LumB"]
+
+
 # ---------- verdict ----------
 def test_unparsed_words_need_confirmation(store):
     spec = parse_request("primary tumours with purity above 60%", store)
@@ -227,6 +303,23 @@ def test_coverage_lists_every_variable(store):
 
 
 # ---------- the real committed manifests ----------
+def test_menopause_status(store):
+    # in the fixture, patients over 50 are post-menopausal: 2, 3, 4, 6, 7
+    assert sorted(run_fixed(parse_request("postmenopausal primary tumours", store), store).cohort_ids) == ids(2, 3, 4, 6, 7)
+    assert sorted(run_fixed(parse_request("pre-menopausal primary tumours", store), store).cohort_ids) == ids(1, 5, 8)
+
+
+@pytest.mark.skipif(not (REAL / "raw" / "clinical.tsv").exists(), reason="run data/tcga-brca/fetch.py first")
+def test_menopause_excludes_indeterminate_on_real_data():
+    """'Indeterminate (neither Pre or Postmenopausal)' contains both 'pre' and 'post' but is neither."""
+    s = DataStore(REAL)
+    status = s.table("clinical").set_index("sample_id")["menopause_status"]
+    for word, start in (("postmenopausal", "Post ("), ("premenopausal", "Pre (")):
+        cohort = run_fixed(parse_request(f"{word} primary tumours", s), s).cohort_ids
+        labels = set(status.reindex(list(cohort)))
+        assert len(labels) == 1 and labels.pop().startswith(start), word
+
+
 @pytest.mark.skipif(not (REAL / "sample_manifest.csv").exists(), reason="real manifests not present")
 def test_brief_demo_on_real_manifests():
     s = DataStore(REAL)
