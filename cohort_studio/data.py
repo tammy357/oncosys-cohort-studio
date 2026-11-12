@@ -132,7 +132,10 @@ class DataStore:
     def genes(self):
         if not self.available("mutation"):
             return set()
-        return set(self.table("mutation").index.astype(str))
+        # one row in the mutation file has no gene name. pandas 3 keeps it as NaN (a float)
+        # through astype(str), which crashes code that treats gene names as text.
+        # Drop it first
+        return set(self.table("mutation").index.dropna().astype(str))
 
     # ---------- composition (who is in the cohort) ----------
     def composition_frame(self):
