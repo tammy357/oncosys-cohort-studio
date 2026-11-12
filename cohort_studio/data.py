@@ -21,6 +21,8 @@ CLINICAL_FIELDS = {
     "histology": {"label": "Histological type", "columns": ["histological_type"]},
     "gender": {"label": "Recorded gender", "columns": ["gender", "Gender_nature2012"]},
     "menopause": {"label": "Menopause status", "columns": ["menopause_status"]},
+    "collection_day": {"label": "Sample collection day (days from diagnosis)",
+                       "columns": ["days_to_collection", "days_to_sample_procurement"]},
 }
 SURVIVAL_FIELDS = {
     "os": {"label": "Overall survival event", "columns": ["OS"]},
@@ -175,4 +177,19 @@ FIELD_TO_COMPOSITION = {
     ("clinical", "er_status"): "ER status (IHC)",
     ("clinical", "stage"): "Stage",
     ("clinical", "age"): "Age band",
+}
+
+# Characteristics that a filter on a field is expected to move, because the two are biologically linked.
+# A shift in one of these is still reported, but labelled as expected rather than as a possible bias.
+_RECEPTOR_PAM50 = ("PAM50 subtype and receptor status are closely linked "
+                   "(for example, basal-like tumors are mostly ER-negative)")
+EXPECTED_LINKS = {
+    ("clinical", "er_status"): {"PAM50 subtype": _RECEPTOR_PAM50},
+    ("clinical", "pr_status"): {"PAM50 subtype": _RECEPTOR_PAM50,
+                                "ER status (IHC)": "PR and ER status usually agree (PR-positive tumors are mostly ER-positive)"},
+    ("clinical", "her2_status"): {"PAM50 subtype": _RECEPTOR_PAM50,
+                                  "ER status (IHC)": "HER2-positive tumors are more often ER-negative than other tumors"},
+    ("clinical", "pam50"): {"ER status (IHC)": _RECEPTOR_PAM50},
+    ("clinical", "histology"): {"PAM50 subtype": "lobular tumors are mostly ER-positive and luminal",
+                                "ER status (IHC)": "lobular tumors are mostly ER-positive and luminal"},
 }

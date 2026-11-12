@@ -5,6 +5,8 @@ They are not validated cut-offs, and the app says so.
 """
 from dataclasses import asdict, dataclass, field
 
+from .spec import describe_step
+
 MIN_PATIENTS = 20          # fewer patients than this: Blocked
 SHIFT_WARN = 0.10          # total variation distance at or above this: Conditional
 MISSING_WARN = 0.20        # a filter field missing for at least this share of samples: Conditional
@@ -39,7 +41,7 @@ class Verdict:
 
 def _is_unknown(message):
     m = message.lower()
-    return "isn't available" in m or "checksum" in m or "fetch.py" in m
+    return "isn't available" in m or "checksum" in m or "fetch.py" in m or "aren't recorded" in m
 
 
 def evaluate(result, store):
@@ -111,13 +113,21 @@ def evaluate(result, store):
 
     # 5. Patients counted twice through several samples
     pairs = any(s.get("op") == "join" and s.get("add_to_cohort") for s in steps)
+    chooser = next((s for s in result.steps if s.op == "one_per_patient"), None)
     several_types = len((steps[0].get("values") if steps and steps[0].get("op") == "sample_type" else []) or []) > 1
     n_ids = len(result.cohort_ids)
     n_pat = store.manifest[store.manifest["sample_id"].isin(result.cohort_ids)]["patient_id"].nunique()
-    if n_ids > n_pat and not (pairs or several_types):
+    if chooser is not None and n_ids == n_pat:
+        how = describe_step(steps[chooser.index]).split(": ", 1)[-1]
+        checks.append(Check("One sample per patient", "pass",
+                            f"{n_ids:,} samples from {n_pat:,} patients. Step {chooser.index + 1} chose one sample for "
+                            f"each of {len(chooser.selection):,} patients who had more than one, by this rule: {how}. "
+                            "Every choice is listed in sample_selection.csv."))
+    elif n_ids > n_pat and not (pairs or several_types):
         checks.append(Check("One sample per patient", "warn",
                             f"{n_ids:,} samples come from {n_pat:,} patients.",
-                            "Decide whether each patient should count once."))
+                            "Decide whether each patient should count once, for example with a "
+                            "'one sample per patient' step that records which sample it keeps."))
     elif n_ids > n_pat:
         checks.append(Check("One sample per patient", "pass",
                             f"{n_ids:,} samples from {n_pat:,} patients, as requested (more than one sample type)."))
@@ -133,22 +143,32 @@ def evaluate(result, store):
         checks.append(Check("Enough patients to work with", "pass", f"{n_pat:,} patients (minimum {MIN_PATIENTS})."))
 
     # 7. Who did the steps remove? (composition shift)
-    shifts = []
+    shifts, expected = [], []
     for s in result.steps:
         for var, info in s.shift.items():
             if info["tvd"] >= SHIFT_WARN and var != "Sample type":
-                shifts.append((s, var, info))
-    overall = {k: v for k, v in result.overall_shift.items() if v["tvd"] >= SHIFT_WARN and k != "Sample type"}
+                (expected if info.get("expected") else shifts).append((s, var, info))
+    big_overall = {k: v for k, v in result.overall_shift.items() if v["tvd"] >= SHIFT_WARN and k != "Sample type"}
+    overall = {k: v for k, v in big_overall.items() if not v.get("expected")}
     comp_cols = [c for c in store.composition_frame().columns if c not in ("patient_id",)]
+    expected_note = ""
+    if expected:
+        expected_note = (" Expected, given what you filtered on: "
+                         + "; ".join(f"step {s.index + 1} moved {var} by {info['tvd']:.2f} ({info['group']}: "
+                                     f"{info['before_pct']}% → {info['after_pct']}%), because {info['expected']}"
+                                     for s, var, info in expected[:3]) + ".")
     if shifts or overall:
         parts = [f"step {s.index + 1} moved {var} by {info['tvd']:.2f} (largest change: {info['group']}, "
                  f"{info['before_pct']}% → {info['after_pct']}%)" for s, var, info in shifts[:3]]
         parts += [f"overall, {var} moved by {info['tvd']:.2f} ({info['group']}: {info['before_pct']}% → {info['after_pct']}%)"
                   for var, info in list(overall.items())[:2]]
         checks.append(Check("The cohort still looks like the population it started from", "warn",
-                            "; ".join(parts) + ".",
+                            "; ".join(parts) + "." + expected_note,
                             "Check whether the shifted groups matter for your question, and report the shift.",
                             fields=comp_cols))
+    elif expected:
+        checks.append(Check("The cohort still looks like the population it started from", "pass",
+                            "No unexpected shift." + expected_note, fields=comp_cols))
     else:
         checks.append(Check("The cohort still looks like the population it started from", "pass",
                             f"No step moved {', '.join(comp_cols)} by {SHIFT_WARN} or more.", fields=comp_cols))
@@ -213,6 +233,16 @@ def limitations_for(result, store):
     if "pam50" in fields:
         out.append("PAM50 subtype is an RNA-based call. A different subtype call can give a different label for about "
                    "one tumor in ten (event kickoff figure).")
+    layers = {s.get("layer") for s in steps if s.get("op") == "layer"}
+    if layers & {"rna", "protein"}:
+        out.append("Cohort Studio only chooses samples; it never changes values. The RNA file is already log2(RSEM + 1) "
+                   "and the protein file uses replicate-based normalization (RBN), both as processed by UCSC Xena for "
+                   "BRCA alone. If you re-normalize inside this cohort (for example z-scores), every value depends on "
+                   "which samples are in it, so the same tumor can score differently in another cohort. Normalize the "
+                   "same way for every cohort you compare, and report how.")
+    if any(s.get("op") == "one_per_patient" for s in steps):
+        out.append("Choosing one sample per patient follows the stated rule, not a judgment about which sample is best "
+                   "for your question. sample_selection.csv lists every choice so a person can check it.")
     if any(s.get("op") == "mutation" for s in steps):
         out.append("Mutation status uses MC3 gene-level calls: samples without mutation data are removed, not "
                    "treated as wild-type.")

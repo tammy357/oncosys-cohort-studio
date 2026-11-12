@@ -173,6 +173,48 @@ def one_row_per_sample(df):
     return df.drop_duplicates(subset=["sample_id"]).copy()
 
 
+SAMPLE_TYPE_PRIORITY = ["Primary Tumor", "Metastatic", "Solid Tissue Normal"]
+
+
+def one_sample_per_patient(df, rule="priority", order=None, time_column=None):
+    """Keep one sample per patient, chosen by a stated rule, and say why in a 'selection.reason' column.
+
+    rule 'priority'          : the first sample type in `order` (default: primary tumor, then
+                               metastatic, then normal), then the lowest sample barcode.
+    rule 'earliest'/'latest' : the smallest / largest value in `time_column` (days from diagnosis
+                               to sample collection). Samples with no recorded day come last, and
+                               ties fall back to the priority rule.
+    Every row of the kept sample stays, so earlier joins keep their rows.
+    """
+    order = list(order or SAMPLE_TYPE_PRIORITY)
+    cols = ["sample_id", "patient_id", "sample_type"] + ([time_column] if time_column else [])
+    per = df.drop_duplicates("sample_id")[cols].copy()
+    per["_rank"] = per["sample_type"].map(lambda t: order.index(t) if t in order else len(order))
+    by = ["_rank", "sample_id"]
+    if rule in ("earliest", "latest"):
+        per["_day"] = pd.to_numeric(per[time_column], errors="coerce")
+        per["_sort_day"] = per["_day"] if rule == "earliest" else -per["_day"]
+        by = ["_sort_day"] + by
+    per = per.sort_values(by, na_position="last")
+    counts = per.groupby("patient_id").size()
+    kept = per.drop_duplicates("patient_id")
+    reasons = {}
+    for _, row in kept.iterrows():
+        n = int(counts[row["patient_id"]])
+        if n == 1:
+            reasons[row["sample_id"]] = "the patient's only sample at this step"
+        elif rule in ("earliest", "latest") and not pd.isna(row["_day"]):
+            reasons[row["sample_id"]] = f"{rule} collection (day {row['_day']:g}) of the patient's {n} samples"
+        elif rule in ("earliest", "latest"):
+            reasons[row["sample_id"]] = (f"no collection day recorded for the patient's {n} samples, "
+                                         f"so kept by sample type ({' > '.join(order)})")
+        else:
+            reasons[row["sample_id"]] = f"first by sample type ({' > '.join(order)}) of the patient's {n} samples"
+    out = df[df["sample_id"].isin(reasons)].copy()
+    out["selection.reason"] = out["sample_id"].map(reasons)
+    return out
+
+
 def cohort_sample_ids(df, extra_columns=()):
     ids = set(df["sample_id"].dropna())
     for col in extra_columns:

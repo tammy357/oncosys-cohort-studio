@@ -11,6 +11,8 @@ script all speak the same language. Step types:
   {"op": "filter", "table": "clinical", "field": "er_status", "cmp": "in", "value": ["Positive"]}
   {"op": "mutation", "gene": "TP53", "mutated": true}
   {"op": "dedupe"}                                      # keep one row per sample
+  {"op": "one_per_patient", "rule": "priority", "order": ["Primary Tumor", "Metastatic", "Solid Tissue Normal"]}
+  {"op": "one_per_patient", "rule": "earliest"}         # or "latest"; needs sample collection days in clinical
 
 join modes: "rows" = ordinary join (one row per match, can inflate counts);
             "exists" = keep each sample once if it has at least one match.
@@ -76,6 +78,12 @@ def describe_step(step, store=None):
         return f"Keep samples {'with' if step.get('mutated', True) else 'without'} a {step['gene']} mutation call"
     if op == "dedupe":
         return "Keep one row per sample"
+    if op == "one_per_patient":
+        rule = step.get("rule", "priority")
+        if rule in ("earliest", "latest"):
+            return f"Keep one sample per patient: the {rule} collected"
+        order = step.get("order") or ops.SAMPLE_TYPE_PRIORITY
+        return "Keep one sample per patient: " + ", then ".join(o.lower() for o in order) + " (ties: lowest barcode)"
     return json.dumps(step)
 
 
@@ -122,6 +130,19 @@ def validate(spec, store):
                 problems.append((i, f"Gene '{step.get('gene')}' isn't in the mutation file."))
         elif op == "dedupe":
             pass
+        elif op == "one_per_patient":
+            rule = step.get("rule", "priority")
+            if rule not in ("priority", "earliest", "latest"):
+                problems.append((i, f"Unknown rule '{rule}'. Use priority, earliest or latest."))
+            bad = [v for v in step.get("order") or [] if v not in ops.SAMPLE_TYPES]
+            if bad:
+                problems.append((i, f"Unknown sample type {bad} in the order. Use {ops.SAMPLE_TYPES}."))
+            if rule in ("earliest", "latest"):
+                if "clinical" not in joined:
+                    problems.append((i, "Join clinical records before choosing the earliest or latest sample."))
+                elif store.available("clinical") and store.resolve_field("clinical", "collection_day") is None:
+                    problems.append((i, "Sample collection dates aren't recorded in this release, so the "
+                                        f"{rule} sample per patient can't be chosen."))
         else:
             problems.append((i, f"Unknown step type '{op}'."))
     return problems

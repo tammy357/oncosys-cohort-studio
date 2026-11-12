@@ -5,13 +5,13 @@ and they live in `cohort_studio/verdict.py`.
 
 | Check | Pass | Warning (→ Conditional) | Fail (→ Blocked) | Can't tell (→ Insufficient Evidence) |
 |---|---|---|---|---|
-| Every step runs on this release | all steps ran | | a field or gene doesn't exist in this release | a needed file isn't downloaded |
+| Every step runs on this release | all steps ran | | a field or gene doesn't exist in this release | a needed file isn't downloaded, or a fact the step needs isn't recorded (for example sample collection dates for "earliest sample per patient") |
 | The whole request was turned into steps | every word used, or unused words confirmed | | | some words weren't used and nobody confirmed they don't matter |
 | Files match the frozen checksums | every raw file matches `sources.csv` | | | a file changed |
 | No sample is counted twice | one row per sample at the end | | the final table has more rows than samples | |
-| One sample per patient | yes, or several sample types were requested | some patients contribute several samples | | |
+| One sample per patient | yes (a "one sample per patient" step lists every choice in `sample_selection.csv`), or several sample types were requested | some patients contribute several samples | | |
 | Enough patients | at least 20 | | fewer than 20 | |
-| The cohort still looks like where it started | no step moves submitting site, PAM50, ER, stage or age band by TVD ≥ 0.10 | a step (or the whole cohort) moves one by ≥ 0.10 | | |
+| The cohort still looks like where it started | no step moves submitting site, PAM50, ER, stage or age band by TVD ≥ 0.10, other than expected shifts (below) | a step (or the whole cohort) moves one by ≥ 0.10, and the move isn't expected | | |
 | Filter fields are recorded | each filter field is recorded for ≥ 80% of samples | ≥ 20% missing, so those samples were dropped | | |
 | Slides are of one kind | | the slide join mixes diagnostic and frozen slides | | |
 | Survival endpoint suits BRCA | | overall survival is used (TCGA-CDR advises caution for BRCA; PFI preferred) | | |
@@ -23,3 +23,9 @@ confirmed. Conditional if any check raises a warning. Ready only when every chec
 mix is unchanged, 1 means no overlap. Fields the user filtered on are left out of that step's shift (and of the
 overall shift), so a deliberate choice isn't reported as a bias. The overall shift compares the final cohort with
 the population after the first sample-type step.
+
+**Expected shifts:** some characteristics are linked to what you filter on, so moving them is the point of the filter,
+not a bias. They are still reported (marked "expected", with the reason) but don't make the verdict Conditional on their
+own. The links, set in `cohort_studio/data.py`: ER, PR or HER2 status ↔ PAM50 subtype (and PR or HER2 → ER status);
+PAM50 → ER status; histological type → PAM50 and ER status. Shifts at the sample-type step are expected too, because that
+step chooses the starting population. Every other shift, such as submitting site or age band, still raises a warning.

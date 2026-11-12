@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from . import ops
-from .data import FIELD_TO_COMPOSITION
+from .data import EXPECTED_LINKS, FIELD_TO_COMPOSITION
 from .spec import JOIN_TABLES, LAYER_LABELS, clone, describe_step, validate
 
 PREFIX = {"slides": "slide", "clinical": "clin", "survival": "surv", "normals": "normal"}
@@ -36,6 +36,8 @@ class StepResult:
     skipped: bool = False
     missing_fraction: float = 0.0   # filter steps: share of incoming samples with no recorded value
     column: str = ""                # filter steps: the real column used
+    selection: list = field(default_factory=list)       # one_per_patient: which sample was kept, and why
+    removed_reasons: dict = field(default_factory=dict)  # per-sample reasons, where a step has them
 
     @property
     def rows_per_sample(self):
@@ -124,6 +126,8 @@ def _removed_reason(step):
         return "did not meet the filter (or the value is not recorded)"
     if op == "mutation":
         return "mutation call didn't match, or the sample has no mutation data"
+    if op == "one_per_patient":
+        return "another sample from the same patient was kept"
     return "removed by this step"
 
 
@@ -143,6 +147,12 @@ def apply_step(frame, step, store):
         return ops.filter_mutation(frame, store.table("mutation"), step["gene"], step.get("mutated", True))
     if op == "dedupe":
         return ops.one_row_per_sample(frame)
+    if op == "one_per_patient":
+        rule = step.get("rule", "priority")
+        time_col = None
+        if rule in ("earliest", "latest"):
+            time_col = f"{PREFIX['clinical']}.{store.resolve_field('clinical', 'collection_day')}"
+        return ops.one_sample_per_patient(frame, rule, step.get("order"), time_col)
     raise ValueError(f"Unknown step '{op}'")
 
 
@@ -161,6 +171,28 @@ def _duplicate_examples(frame, step, limit=5):
     return examples
 
 
+def _record_selection(r, before, after):
+    """For a one_per_patient step: which sample each patient kept, which were dropped, and why."""
+    kept = after.drop_duplicates("sample_id").set_index("patient_id")
+    sample_patient = before.drop_duplicates("sample_id").set_index("sample_id")["patient_id"]
+    for sid in r.removed:
+        pid = sample_patient[sid]
+        r.removed_reasons[sid] = f"another sample from the same patient was kept ({kept.loc[pid, 'sample_id']})"
+    dropped = {}
+    for sid in r.removed:
+        dropped.setdefault(sample_patient[sid], []).append(sid)
+    for pid, sids in sorted(dropped.items()):
+        r.selection.append({"patient_id": pid, "kept": kept.loc[pid, "sample_id"],
+                            "kept_type": kept.loc[pid, "sample_type"], "dropped": sorted(sids),
+                            "reason": kept.loc[pid, "selection.reason"]})
+
+
+def _mark_expected(shift, links):
+    for var, info in shift.items():
+        info["expected"] = links.get(var, "")
+    return shift
+
+
 def extra_cohort_columns(spec):
     return [f"{PREFIX[s['table']]}.sample_id" for s in spec.get("steps", [])
             if s.get("op") == "join" and s.get("add_to_cohort") and s.get("mode", "rows") == "rows"]
@@ -171,6 +203,7 @@ def run(spec, store):
     frame = store.manifest.copy()
     start_ids = list(frame["sample_id"].unique())
     filtered_vars = set()
+    all_links = {}
     results = []
     failed = False
     for i, step in enumerate(spec.get("steps", [])):
@@ -199,6 +232,8 @@ def run(spec, store):
         after_ids = set(new["sample_id"])
         r.removed = sorted(before_ids - after_ids)
         r.removed_reason = _removed_reason(step)
+        if step["op"] == "one_per_patient":
+            _record_selection(r, frame, new)
         ratio_in = r.rows_in / r.samples_in if r.samples_in else 1
         if r.samples_out and r.rows_per_sample > ratio_in + 1e-9:
             r.inflated = True
@@ -208,7 +243,13 @@ def run(spec, store):
             r.duplicate_examples = _duplicate_examples(new, step)
         skip = _skip_columns_for(step)
         filtered_vars |= skip
-        r.shift = composition_shift(store, before_ids, after_ids, skip)
+        links = EXPECTED_LINKS.get((step.get("table"), step.get("field")), {}) if step["op"] == "filter" else {}
+        all_links.update(links)
+        shift = composition_shift(store, before_ids, after_ids, skip)
+        if step["op"] == "sample_type":
+            # Choosing tumors over normals changes everything else on purpose; it isn't a loss of samples.
+            links = {var: "this step chooses the sample types you asked for" for var in shift}
+        r.shift = _mark_expected(shift, links)
         results.append(r)
         frame = new
     extra = extra_cohort_columns(spec)
@@ -219,7 +260,8 @@ def run(spec, store):
     steps = spec.get("steps", [])
     if steps and steps[0].get("op") == "sample_type" and results and not results[0].skipped:
         baseline = list(store.manifest[store.manifest["sample_type"].isin(steps[0]["values"])]["sample_id"])
-    overall = composition_shift(store, baseline, frame["sample_id"].unique(), filtered_vars) if not failed else {}
+    overall = _mark_expected(composition_shift(store, baseline, frame["sample_id"].unique(), filtered_vars),
+                             all_links) if not failed else {}
     return RunResult(spec=spec, steps=results, frame=frame, cohort_ids=cohort, problems=problems,
                      start_samples=start_ids, overall_shift=overall,
                      final_rows=len(frame), final_samples=frame["sample_id"].nunique(),

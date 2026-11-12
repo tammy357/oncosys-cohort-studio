@@ -34,6 +34,8 @@ Step types (run in order, starting from every sample in the release):
 {"op":"join","table":"normals","key":"patient_id","mode":"rows","add_to_cohort":false}  (patient also has a normal-tissue sample; add_to_cohort true for tumour-normal pairs)
 {"op":"filter","table":"clinical","field": one of %(clin)s, "cmp": one of ["in","not_in","notnull","gte","lte","between","stage_in","contains"], "value": ...}
 {"op":"filter","table":"survival","field": one of %(surv)s, "cmp": "notnull" or "is_event", "value": null}
+{"op":"one_per_patient","rule":"priority","order":%(types)s}   (keep one sample per patient, by sample type, then barcode)
+{"op":"one_per_patient","rule":"earliest" or "latest"}        (needs a clinical join first; the tool says if collection dates are missing)
 
 Values: er_status/pr_status/her2_status use "Positive"/"Negative"; pam50 uses "LumA","LumB","Her2","Basal","Normal";
 stage_in uses ["I","II","III","IV"]; age uses numbers (between takes [low, high]); gender uses "FEMALE"/"MALE";

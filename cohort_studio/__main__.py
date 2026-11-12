@@ -73,9 +73,21 @@ def main(argv=None):
     for r in v.human_review:
         print(f"   - {r}")
 
+    sel = exports.selection_frame(result)
+    if len(sel):
+        print(f"\nOne sample per patient: chose for {len(sel)} patients with more than one sample, e.g.")
+        for _, row in sel.head(3).iterrows():
+            print(f"  {row['patient_id']}: kept {row['kept']}, dropped {row['dropped']} ({row['reason']})")
+    cov = exports.coverage_frame(result, store)
+    if len(cov):
+        well = int((cov["recorded %"] >= 80).sum())
+        print(f"\nRecorded for this cohort: {well} of {len(cov)} clinical and survival variables have a value for at "
+              f"least 80% of its samples (full list in coverage.csv).")
+
     out = exports.write_all(result, v, store, args.out, team=args.team)
     print(f"\nWrote {len(result.cohort_ids)} samples to {out / 'cohort_samples.csv'} "
-          f"(plus reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv, verdict.json, findings.json)")
+          f"(plus reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv, sample_selection.csv, "
+          f"coverage.csv, verdict.json, findings.json)")
     return 0
 
 

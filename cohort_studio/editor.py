@@ -2,7 +2,7 @@
 import pandas as pd
 
 COLUMNS = ["step", "table", "what", "key", "mode", "compare", "value", "slide kinds", "add to cohort"]
-STEP_TYPES = ["sample_type", "layer", "join", "filter", "mutation", "dedupe"]
+STEP_TYPES = ["sample_type", "layer", "join", "filter", "mutation", "dedupe", "one_per_patient"]
 
 
 def _join_list(values):
@@ -31,6 +31,9 @@ def steps_to_table(steps):
         elif op == "mutation":
             row["what"] = s.get("gene", "")
             row["value"] = "mutated" if s.get("mutated", True) else "not mutated"
+        elif op == "one_per_patient":
+            row["what"] = s.get("rule", "priority")
+            row["value"] = _join_list(s.get("order") or []) if s.get("rule", "priority") == "priority" else ""
         rows.append(row)
     return pd.DataFrame(rows, columns=COLUMNS)
 
@@ -84,6 +87,12 @@ def table_to_steps(df):
                               "mutated": str(row["value"]).strip().lower() not in ("not mutated", "false", "no", "wild-type")})
             elif op == "dedupe":
                 steps.append({"op": op})
+            elif op == "one_per_patient":
+                rule = str(row["what"]).strip() or "priority"
+                st = {"op": op, "rule": rule}
+                if rule == "priority" and _split(row["value"]):
+                    st["order"] = _split(row["value"])
+                steps.append(st)
             else:
                 problems.append(f"Row {i + 1}: unknown step type '{op}'.")
         except Exception as exc:

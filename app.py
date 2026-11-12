@@ -25,6 +25,7 @@ EXAMPLES = [
     "ER-positive primary tumors with a PAM50 subtype and frozen slides",
     "basal-like tumors with progression-free interval data, joined by patient",
     "tumor-normal pairs with RNA",
+    "primary and metastatic tumors with RNA data, one sample per patient",
 ]
 STATUS_LABEL = {"pass": "PASS", "warn": "WARNING", "fail": "FAIL", "unknown": "CAN'T TELL"}
 
@@ -173,7 +174,9 @@ with st.expander("What each column means"):
         "- **filter**: `table` + `what` = field (er_status, pr_status, her2_status, pam50, stage, age, histology, "
         "gender, menopause; survival: os, pfi, dss, dfi); `compare` and `value`, e.g. in / Positive, between / 40-60\n"
         "- **mutation**: `what` = gene, `value` = mutated or not mutated\n"
-        "- **dedupe**: keep one row per sample")
+        "- **dedupe**: keep one row per sample\n"
+        "- **one_per_patient**: `what` = priority (`value` = sample-type order, e.g. Primary Tumor, Metastatic), "
+        "or earliest / latest (needs a clinical join and sample collection days in the release)")
 
 if st.button("Run the steps", type="primary"):
     steps, problems = table_to_steps(edited)
@@ -216,6 +219,13 @@ for s in [s for s in result.steps if s.inflated]:
             st.rerun()
 for f in result.spec.get("fix_log", []):
     st.success(f"Fixed step {f['step']}: it had {f['rows']:,} rows for {f['samples']:,} samples. {f['fix']}")
+selection = exports.selection_frame(result)
+for s in [s for s in result.steps if s.op == "one_per_patient" and not s.skipped]:
+    with st.container(border=True):
+        st.markdown(f"**Step {s.index + 1} kept one sample per patient.** {len(s.selection):,} patients had more than "
+                    f"one sample at this step; here is what was kept for each, and why.")
+        if len(selection):
+            st.dataframe(selection[selection["step"] == s.index + 1], hide_index=True, width="stretch")
 
 # ---------------- 4. who was removed ----------------
 st.subheader("4 · Who did the steps remove?")
@@ -229,13 +239,28 @@ for s in result.steps:
         shift_rows.append({"step": s.index + 1, "what it does": s.label, "samples removed": len(s.removed),
                            "characteristic": var, "TVD": info["tvd"],
                            "largest change": f"{info['group']}: {info['before_pct']}% → {info['after_pct']}%",
-                           "flag": "SHIFT" if info["tvd"] >= verdict.SHIFT_WARN else ""})
+                           "flag": ("" if info["tvd"] < verdict.SHIFT_WARN else
+                                    "expected" if info.get("expected") else "SHIFT"),
+                           "why expected": info.get("expected", "") if info["tvd"] >= verdict.SHIFT_WARN else ""})
 if shift_rows:
     sdf = pd.DataFrame(shift_rows).sort_values("TVD", ascending=False)
     st.dataframe(sdf, width="stretch", hide_index=True)
+st.caption("**SHIFT** may be a bias worth reporting. **expected** means the change follows from what you asked for "
+           "(for example, filtering on ER status changes the PAM50 mix, because the two are closely linked).")
 excl = exports.exclusions_frame(result)
 with st.expander(f"Every excluded sample, with the reason ({len(excl):,})"):
     st.dataframe(excl, width="stretch", hide_index=True)
+coverage = exports.coverage_frame(result, store)
+if len(coverage):
+    well = int((coverage["recorded %"] >= 80).sum())
+    with st.expander(f"What's recorded for this cohort: {well} of {len(coverage)} clinical and survival variables "
+                     "have a value for at least 80% of its samples"):
+        st.caption("Check this before filtering or modelling on a variable. Variables with a filter name can be used "
+                   "in the steps above; the rest are listed so you can see what the release holds. Blank, "
+                   "'[Not Available]', 'Indeterminate' and similar entries count as not recorded.")
+        st.dataframe(coverage, width="stretch", hide_index=True)
+else:
+    st.caption("Download the clinical and survival files (fetch.py) to see which variables are recorded for this cohort.")
 
 # ---------------- 5. verdict ----------------
 st.subheader("5 · Verdict")
@@ -264,6 +289,8 @@ else:
         "findings.json": json.dumps(exports.findings_document(result, v, store, team), indent=2),
         "ledger.csv": exports.ledger_frame(result).to_csv(index=False),
         "exclusions.csv": excl.to_csv(index=False),
+        "sample_selection.csv": selection.to_csv(index=False),
+        "coverage.csv": coverage.to_csv(index=False),
     }
     st.write(f"**{len(result.cohort_ids):,} samples** from {result.final_patients:,} patients.")
     cols = st.columns(3)

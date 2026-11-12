@@ -27,8 +27,8 @@ Or from the command line, which is handy for a judge's new request:
 
 ```bash
 python -m cohort_studio "primary tumors with both RNA and protein data and a diagnostic slide"
-# writes output/cohort_samples.csv, reproduce_cohort.py, cohort_spec.json, ledger.csv,
-#        exclusions.csv, verdict.json and findings.json
+# writes output/cohort_samples.csv, reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv,
+#        sample_selection.csv, coverage.csv, verdict.json and findings.json
 python -m cohort_studio --fields              # which fields and values exist in this release
 python -m pytest tests -q                     # tests (synthetic fixture + the real manifests)
 ```
@@ -49,15 +49,23 @@ Clinical, survival and mutation filters need `fetch.py` first; until then the to
 4. **Inflation check after every join.** If rows grow faster than distinct samples, the step is flagged, with
    example samples and the records they matched, and a one-click fix (keep each sample once, or join on the
    sample barcode instead of the patient barcode). Export is paused until it's fixed.
-5. **Who did we lose?** For every step, how the mix of submitting site, PAM50 subtype, ER status, stage and age
+5. **One sample per patient, with the rule recorded.** Ask for "one sample per patient" and the tool keeps one by a
+   stated rule (primary tumor, then metastatic, then normal; ties go to the lowest barcode). `sample_selection.csv`
+   lists every patient it had to choose for, what it kept, what it dropped and why. Ask for the "earliest" or "latest"
+   sample and it uses sample collection days if the release records them, or says **Insufficient Evidence** if not.
+6. **Who did we lose?** For every step, how the mix of submitting site, PAM50 subtype, ER status, stage and age
    band changed (total variation distance). Fields you filtered on are left out, so choosing ER-positive tumors
-   isn't reported as a bias.
-6. **Verdict:** Ready, Conditional, Blocked or Insufficient Evidence, with every check, the fields used, the
+   isn't reported as a bias, and shifts that follow from them (an ER filter changes the PAM50 mix) are marked
+   "expected", with the reason. Other shifts, such as submitting site, still need a person to look.
+7. **What's recorded for this cohort.** Every clinical and survival variable in the release, with the share of the
+   cohort's samples that have a value, so you can see what's usable before you filter or model on it (`coverage.csv`).
+8. **Verdict:** Ready, Conditional, Blocked or Insufficient Evidence, with every check, the fields used, the
    decision rule, what a person must review, and the limitations. See [VERDICT_RULES.md](VERDICT_RULES.md).
-7. **Export.** `cohort_samples.csv` (one row per sample, `sample_id` column, no duplicates),
+9. **Export.** `cohort_samples.csv` (one row per sample, `sample_id` column, no duplicates),
    `reproduce_cohort.py` (rebuilds the cohort with the same operations and checks the files' checksums),
-   `cohort_spec.json`, `ledger.csv`, `exclusions.csv`, `verdict.json` and `findings.json` in the shared format v0.2.
-8. **Compare versions** (stretch): save two cohorts and see what's only in each.
+   `cohort_spec.json`, `ledger.csv`, `exclusions.csv`, `sample_selection.csv`, `coverage.csv`, `verdict.json` and
+   `findings.json` in the shared format v0.2.
+10. **Compare versions** (stretch): save two cohorts and see what's only in each.
 
 ## One result you can verify
 

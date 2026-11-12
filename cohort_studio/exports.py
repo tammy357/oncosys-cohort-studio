@@ -22,20 +22,67 @@ def ledger_frame(result):
             "patients": s.patients_out if not s.skipped else None,
             "samples removed": len(s.removed),
             "inflated": "YES" if s.inflated else "",
-            "largest shift": f"{top[0]} {top[1]['tvd']:.2f}" if top[0] else "",
+            "largest shift": (f"{top[0]} {top[1]['tvd']:.2f}" + (" (expected)" if top[1].get("expected") else ""))
+                             if top[0] else "",
             "error": s.error,
         })
     return pd.DataFrame(rows)
 
 
 def exclusions_frame(result):
-    rows = [{"sample_id": sid, "removed_at_step": s.index + 1, "step": s.label, "reason": s.removed_reason}
+    rows = [{"sample_id": sid, "removed_at_step": s.index + 1, "step": s.label,
+             "reason": s.removed_reasons.get(sid, s.removed_reason)}
             for s in result.steps for sid in s.removed]
     return pd.DataFrame(rows, columns=["sample_id", "removed_at_step", "step", "reason"])
 
 
 def cohort_frame(result):
     return pd.DataFrame({"sample_id": result.cohort_ids})
+
+
+SELECTION_COLUMNS = ["step", "patient_id", "kept", "kept sample type", "dropped", "reason"]
+
+
+def selection_frame(result):
+    """Every patient for whom a 'one sample per patient' step had to choose: what it kept, what it dropped, and why."""
+    rows = [{"step": s.index + 1, "patient_id": x["patient_id"], "kept": x["kept"], "kept sample type": x["kept_type"],
+             "dropped": ", ".join(x["dropped"]), "reason": x["reason"]}
+            for s in result.steps for x in s.selection]
+    return pd.DataFrame(rows, columns=SELECTION_COLUMNS)
+
+
+def coverage_frame(result, store):
+    """Every clinical and survival variable, with how many cohort samples have a recorded value.
+
+    Columns that start with '_' are UCSC Xena bookkeeping columns and are left out.
+    """
+    from .data import TABLE_FIELDS
+    ids = list(result.cohort_ids)
+    rows = []
+    for table in ("clinical", "survival"):
+        if not store.available(table):
+            continue
+        t = store.table(table).drop_duplicates("sample_id").set_index("sample_id")
+        friendly = {store.resolve_field(table, f): f for f in TABLE_FIELDS[table]}
+        sub = t.reindex(ids)
+        for col in t.columns:
+            if col in ("patient_id",) or col.startswith("_"):
+                continue
+            values = sub[col]
+            recorded = values[~values.map(ops.is_missing)].astype(str)
+            counts = recorded.value_counts()
+            rows.append({"table": table, "column": col, "filter name": friendly.get(col, ""),
+                         "recorded": int(len(recorded)),
+                         "recorded %": round(100 * len(recorded) / len(ids), 1) if ids else 0.0,
+                         "distinct values": int(counts.size),
+                         "most common": f"{counts.index[0]} ({counts.iloc[0]})" if counts.size else ""})
+    df = pd.DataFrame(rows, columns=["table", "column", "filter name", "recorded", "recorded %",
+                                     "distinct values", "most common"])
+    if df.empty:
+        return df
+    df["_catalogued"] = df["filter name"] != ""
+    df = df.sort_values(["_catalogued", "recorded %", "column"], ascending=[False, False, True])
+    return df.drop(columns="_catalogued").reset_index(drop=True)
 
 
 def reproduce_script(result, store):
@@ -124,6 +171,11 @@ def reproduce_script(result, store):
             lines.append(f"df = filter_mutation(df, mutation, {s['gene']!r}, {bool(s.get('mutated', True))!r})")
         elif op == "dedupe":
             lines.append("df = one_row_per_sample(df)")
+        elif op == "one_per_patient":
+            rule = s.get("rule", "priority")
+            time_col = (f"{PREFIX['clinical']}.{store.resolve_field('clinical', 'collection_day')}"
+                        if rule in ("earliest", "latest") else None)
+            lines.append(f"df = one_sample_per_patient(df, {rule!r}, {s.get('order')!r}, {time_col!r})")
         lines.append(f"print(f'Step {i}: {{len(df)}} rows, {{df.sample_id.nunique()}} samples, {{df.patient_id.nunique()}} patients')")
     lines += [
         "",
@@ -167,7 +219,7 @@ def findings_document(result, verdict, store, team="Cohort Studio team"):
                          "limitation": "Fixed before export; the cohort file has one row per sample.",
                          "needs_human_review": False})
     for s in result.steps:
-        big = {k: v for k, v in s.shift.items() if v["tvd"] >= 0.10 and k != "Sample type"}
+        big = {k: v for k, v in s.shift.items() if v["tvd"] >= 0.10 and k != "Sample type" and not v.get("expected")}
         if big:
             n += 1
             var, info = max(big.items(), key=lambda kv: kv[1]["tvd"])
@@ -200,6 +252,8 @@ def write_all(result, verdict, store, out_dir, team="Cohort Studio team"):
     (out / "cohort_spec.json").write_text(json.dumps(result.spec, indent=2))
     ledger_frame(result).to_csv(out / "ledger.csv", index=False)
     exclusions_frame(result).to_csv(out / "exclusions.csv", index=False)
+    selection_frame(result).to_csv(out / "sample_selection.csv", index=False)
+    coverage_frame(result, store).to_csv(out / "coverage.csv", index=False)
     (out / "verdict.json").write_text(json.dumps(verdict.to_dict(), indent=2))
     (out / "reproduce_cohort.py").write_text(reproduce_script(result, store))
     (out / "findings.json").write_text(json.dumps(findings_document(result, verdict, store, team), indent=2))

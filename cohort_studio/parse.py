@@ -243,6 +243,20 @@ def parse_request(text, store=None):
     if t.find(r"pre[- ]?menopausal", "pre-menopausal"):
         clin("menopause", "contains", ["pre"], "")
 
+    # --- one sample per patient ---
+    choose = None
+    per_patient = r"(?:\s+(?:per|for each|of each|from each|for every)\s+patient)?"
+    if t.find(r"(?:the\s+)?(?:earliest|first|initial)(?:[- ]collected)?\s+(?:samples?|specimens?)" + per_patient,
+              "keep each patient's earliest collected sample"):
+        choose = {"op": "one_per_patient", "rule": "earliest"}
+    elif t.find(r"(?:the\s+)?(?:latest|last|most recent|newest)(?:[- ]collected)?\s+(?:samples?|specimens?)" + per_patient,
+                "keep each patient's latest collected sample"):
+        choose = {"op": "one_per_patient", "rule": "latest"}
+    elif t.find(r"(?:only\s+)?(?:one|a single|1)\s+(?:samples?|specimens?)\s+(?:per|for each|from each|for every)\s+patient|"
+                r"one per patient|(?:count|counting) each patient once|unique patients?|dedup\w* (?:by|on) patients?",
+                "keep one sample per patient (primary tumor first, then metastatic, then normal)"):
+        choose = {"op": "one_per_patient", "rule": "priority"}
+
     key = "sample_id"
     if t.find(r"(?:(?:joined|join|matched|linked)\s+)?(?:by|on|using)(?: the)? patient(?: id| barcode)?s?|patient[- ]level", "join on the patient barcode"):
         key = "patient_id"
@@ -263,6 +277,10 @@ def parse_request(text, store=None):
     if want_slides:
         steps.append({"op": "join", "table": "slides", "key": "sample_id", "mode": "rows",
                       "slide_kinds": list(dict.fromkeys(kinds))})
+    if choose:
+        if choose["rule"] != "priority" and not clinical_filters:
+            steps.append({"op": "join", "table": "clinical", "key": key, "mode": "rows"})
+        steps.append(choose)
 
     spec = new_spec(text, steps, parser="rules")
     spec["notes"] = notes

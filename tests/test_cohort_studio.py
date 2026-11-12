@@ -165,6 +165,65 @@ def test_findings_json_is_valid(store, tmp_path):
     assert any(f["kind"] == "join_inflation" for f in doc["findings"])
 
 
+# ---------- one sample per patient ----------
+def test_one_sample_per_patient_by_sample_type(store):
+    spec = parse_request("all samples, one sample per patient", store)
+    assert spec["steps"][-1] == {"op": "one_per_patient", "rule": "priority"}
+    r = run_fixed(spec, store)
+    assert r.cohort_ids == ids(1, 2, 3, 4, 5, 6, 7, 8)          # every patient keeps its primary tumour
+    sel = exports.selection_frame(r)
+    assert set(sel.patient_id) == {"TCGA-ZZ-0001", "TCGA-ZZ-0002", "TCGA-ZZ-0003", "TCGA-ZZ-0008"}
+    assert sel.set_index("patient_id").loc["TCGA-ZZ-0008", "dropped"] == "TCGA-ZZ-0008-06"
+    excl = exports.exclusions_frame(r)
+    assert "TCGA-ZZ-0008-01" in excl.set_index("sample_id").loc["TCGA-ZZ-0008-06", "reason"]
+    check = next(c for c in verdict.evaluate(r, store).checks if c.name == "One sample per patient")
+    assert check.status == "pass" and "sample_selection.csv" in check.detail
+
+
+def test_custom_order_keeps_metastasis(store):
+    spec = {"request": "", "steps": [{"op": "sample_type", "values": ["Primary Tumor", "Metastatic"]},
+                                     {"op": "one_per_patient", "rule": "priority",
+                                      "order": ["Metastatic", "Primary Tumor"]}]}
+    r = engine.run(spec, store)
+    assert "TCGA-ZZ-0008-06" in r.cohort_ids and "TCGA-ZZ-0008-01" not in r.cohort_ids
+
+
+def test_earliest_without_collection_dates_is_insufficient_evidence(store):
+    spec = parse_request("primary and metastatic tumours, earliest sample per patient", store)
+    assert spec["steps"][-1]["rule"] == "earliest" and not spec["unparsed"]
+    v = verdict.evaluate(engine.run(spec, store), store)
+    assert v.verdict == "Insufficient Evidence" and "collection dates" in v.reason
+
+
+def test_earliest_with_collection_dates(tmp_path):
+    d = build(tmp_path / "release", collection_days=True)
+    s = DataStore(d)
+    spec = parse_request("primary and metastatic tumours, earliest sample per patient", s)
+    r = engine.run(spec, s)
+    assert "TCGA-ZZ-0008-06" in r.cohort_ids and "TCGA-ZZ-0008-01" not in r.cohort_ids
+    out = exports.write_all(r, verdict.evaluate(r, s), s, tmp_path / "out")
+    subprocess.run([sys.executable, str(out / "reproduce_cohort.py"), str(d), str(tmp_path / "again.csv")],
+                   check=True, capture_output=True)
+    assert (tmp_path / "again.csv").read_text() == (out / "cohort_samples.csv").read_text()
+
+
+# ---------- expected shifts and coverage ----------
+def test_receptor_filter_shift_in_pam50_is_labelled_expected(store):
+    r = run_fixed(parse_request("ER-positive tumours", store), store)
+    er_step = next(s for s in r.steps if s.op == "filter")
+    assert er_step.shift["PAM50 subtype"]["expected"]
+    assert r.overall_shift["PAM50 subtype"]["expected"]
+    assert "Submitting site" in er_step.shift and not er_step.shift["Submitting site"]["expected"]
+
+
+def test_coverage_lists_every_variable(store):
+    r = run_fixed(parse_request("primary tumors", store), store)
+    cov = exports.coverage_frame(r, store)
+    row = cov.set_index("column").loc["breast_carcinoma_estrogen_receptor_status"]
+    assert row["filter name"] == "er_status" and row["recorded"] == 7     # patient 6 is '[Not Evaluated]'
+    assert not any(c.startswith("_") for c in cov["column"])
+
+
 # ---------- the real committed manifests ----------
 @pytest.mark.skipif(not (REAL / "sample_manifest.csv").exists(), reason="real manifests not present")
 def test_brief_demo_on_real_manifests():
@@ -182,3 +241,12 @@ def test_any_slide_join_on_real_manifests():
     s = DataStore(REAL)
     r = engine.run(parse_request("primary tumours with a pathology slide", s), s)
     assert r.steps[-1].inflated and r.steps[-1].rows_out > 2 * r.steps[-1].samples_out
+
+
+@pytest.mark.skipif(not (REAL / "sample_manifest.csv").exists(), reason="real manifests not present")
+def test_one_sample_per_patient_on_real_manifests():
+    s = DataStore(REAL)
+    r = engine.run(parse_request("primary and metastatic tumors with RNA data, one sample per patient", s), s)
+    assert len(r.cohort_ids) == r.final_patients == 1097
+    sel = exports.selection_frame(r)
+    assert len(sel) == 7 and set(sel["kept sample type"]) == {"Primary Tumor"}

@@ -15,7 +15,8 @@ def _sha(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 
 
-def build(root):
+def build(root, collection_days=False):
+    """collection_days=True adds a made-up days_to_collection column (the real release may not have one)."""
     root = pathlib.Path(root)
     (root / "raw").mkdir(parents=True, exist_ok=True)
     samples = []
@@ -63,6 +64,10 @@ def build(root):
                      "pathologic_stage": stage[i], "age_at_initial_pathologic_diagnosis": age[i],
                      "histological_type": "Infiltrating Lobular Carcinoma" if i == 4 else "Infiltrating Ductal Carcinoma",
                      "gender": "FEMALE", "menopause_status": "Post (prior bilateral ovariectomy)" if age[i] > 50 else "Pre (<6 months since LMP)"})
+        if collection_days:
+            # patient 8: the metastasis (-06) was collected before the primary tumour; normals have no day
+            day = {"01": 30 + i, "06": 10, "11": ""}[s["sample_id"][-2:]]
+            clin[-1]["days_to_collection"] = day
         surv.append({"sample": s["sample_id"], "_PATIENT": s["patient_id"], "OS": int(i in (3, 5)),
                      "OS.time": 400 + 50 * i, "PFI": "" if i == 6 else int(i in (3, 5, 8)), "PFI.time": 300 + 40 * i})
     pd.DataFrame(clin).to_csv(root / "raw" / "clinical.tsv", sep="\t", index=False)
