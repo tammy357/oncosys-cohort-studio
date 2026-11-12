@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/disleveK/oncosys-hackathon-challenge/format/findings.schema.json",
+  "title": "OncoSys Cancer AI Lab findings (v0.2)",
+  "description": "One file a tool writes and another tool reads. Required for Cohort Control Tower and Repair Review Desk; optional for every other product.",
+  "type": "object",
+  "required": [
+    "format_version",
+    "producer",
+    "data",
+    "question",
+    "findings"
+  ],
+  "properties": {
+    "format_version": {
+      "const": "0.2"
+    },
+    "producer": {
+      "type": "object",
+      "required": [
+        "team",
+        "product",
+        "track"
+      ],
+      "properties": {
+        "team": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "track": {
+          "enum": [
+            "cohort-firewall",
+            "evidence-navigator"
+          ]
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "The release(s) the findings are about. For a comparison, list both.",
+      "required": [
+        "releases"
+      ],
+      "properties": {
+        "dataset": {
+          "type": "string"
+        },
+        "releases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "files"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "file",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "file": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "hash_of": {
+                      "enum": [
+                        "file",
+                        "content"
+                      ],
+                      "description": "'file' (default): hash of the file as downloaded. 'content': hash of the decompressed content, used for generated releases."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "question": {
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "Ready",
+        "Conditional",
+        "Blocked",
+        "Insufficient Evidence",
+        "Proceed",
+        "Fix a problem",
+        "Narrow the question",
+        "Stop"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "summary",
+          "severity",
+          "confidence",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "sample_swap",
+              "duplicate",
+              "missing_data",
+              "membership_change",
+              "label_conflict",
+              "join_inflation",
+              "unlinked_record",
+              "claim_check",
+              "other"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "none"
+            ]
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "affects_analyses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "not_affected_analyses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limitation": {
+            "type": "string"
+          },
+          "needs_human_review": {
+            "type": "boolean"
+          },
+          "claim_text": {
+            "type": "string",
+            "description": "Claim Auditor: the claim exactly as written in the report"
+          },
+          "claim_verdict": {
+            "enum": [
+              "supported",
+              "contradicted",
+              "insufficient_evidence"
+            ],
+            "description": "Claim Auditor: the verdict for this claim"
+          },
+          "correct_value": {
+            "type": "string",
+            "description": "Claim Auditor: for a contradicted claim, what the data actually shows (for example '16.7% (141 of 844)')"
+          }
+        }
+      }
+    },
+    "analyses": {
+      "type": "array",
+      "description": "Results of rerunning analyses, so a reviewer can see what moved.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unchanged",
+              "changed",
+              "not_rerun"
+            ]
+          },
+          "before": {
+            "type": "object"
+          },
+          "after": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "repairs": {
+      "type": "array",
+      "description": "Proposed fixes for a reviewer to approve or reject.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "targets",
+          "justification",
+          "addresses"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "exclude",
+              "relabel",
+              "restore_from_previous_release",
+              "flag_for_review",
+              "other"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "justification": {
+            "type": "string"
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Finding ids this repair resolves"
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Written by a reviewer (for example Repair Review Desk).",
+      "items": {
+        "type": "object",
+        "required": [
+          "repair_id",
+          "decision",
+          "reason",
+          "reviewer_role"
+        ],
+        "properties": {
+          "repair_id": {
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "reject",
+              "request_more_evidence"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reviewer_role": {
+            "type": "string"
+          },
+          "original_preserved": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "description": "A pointer to evidence: a sample, a patient, a gene or protein, a slide, a file, a release, or a quoted claim.",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "sample",
+            "patient",
+            "gene",
+            "protein",
+            "slide",
+            "file",
+            "release",
+            "analysis",
+            "claim",
+            "row"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

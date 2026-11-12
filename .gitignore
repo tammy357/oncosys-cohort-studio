@@ -1,0 +1,18 @@
+.ipynb_checkpoints/
+__pycache__/
+.DS_Store
+# Judge-only material never goes in this repo
+judges/
+data/tcga-brca/raw/
+data/tcga-brca/releases/
+data/pathmnist/raw/
+data/pathmnist/gallery/
+data/pathmnist/outputs/
+data/lidc-idri/raw/
+data/depmap/raw/
+data/cptac/raw/
+data/clinical-trials/raw/
+
+# Cohort Studio outputs (regenerate with the app or CLI)
+output/
+.pytest_cache/

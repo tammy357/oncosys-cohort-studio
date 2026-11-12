@@ -1,0 +1,361 @@
+{
+  "format_version": "0.2",
+  "producer": {
+    "team": "organizers (reference output)",
+    "product": "Cohort Control Tower",
+    "track": "cohort-firewall"
+  },
+  "data": {
+    "dataset": "TCGA-BRCA",
+    "releases": [
+      {
+        "name": "raw",
+        "files": [
+          {
+            "file": "clinical.tsv",
+            "sha256": "39eb3be0fb86e6a577bd2cc01502a7fa5a271e1e1cba294e9dc644ad99580d7f"
+          },
+          {
+            "file": "protein_rppa.tsv.gz",
+            "sha256": "7823a7a375495f7e5f114d0c7ec8773e070cb9ac409785f98045d12ab71195e6"
+          }
+        ]
+      },
+      {
+        "name": "practice-B",
+        "files": [
+          {
+            "file": "clinical.tsv",
+            "sha256": "39eb3be0fb86e6a577bd2cc01502a7fa5a271e1e1cba294e9dc644ad99580d7f",
+            "hash_of": "content"
+          },
+          {
+            "file": "protein_rppa.tsv.gz",
+            "sha256": "e5ee5f77c9a5dfb3c6ea90d84a47db2866543d3dcaebc5093efb691b8847da5f",
+            "hash_of": "content"
+          }
+        ]
+      }
+    ]
+  },
+  "question": "Did release practice-B change anything that affects analyses A1 (ER-alpha protein by ER status) and A2 (RNA subtype mix)?",
+  "verdict": "Conditional",
+  "findings": [
+    {
+      "id": "F1",
+      "kind": "sample_swap",
+      "summary": "Protein profiles of TCGA-A8-A09K-01 (ER-positive) and TCGA-B6-A0WX-01 (ER-negative) appear exchanged between releases.",
+      "severity": "high",
+      "confidence": "high",
+      "evidence": [
+        {
+          "kind": "sample",
+          "id": "TCGA-A8-A09K-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-B6-A0WX-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "protein",
+          "id": "ERALPHA"
+        }
+      ],
+      "affects_analyses": [
+        "A1"
+      ],
+      "not_affected_analyses": [
+        "A2"
+      ],
+      "limitation": "A swap is inferred from the two profiles trading places; the release notes don't say why.",
+      "needs_human_review": true
+    },
+    {
+      "id": "F2",
+      "kind": "duplicate",
+      "summary": "Five new sample IDs carry protein profiles identical to five existing samples.",
+      "severity": "high",
+      "confidence": "high",
+      "evidence": [
+        {
+          "kind": "sample",
+          "id": "TCGA-LL-A5YN-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz",
+          "note": "identical to TCGA-AR-A1AP-01"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-GM-A5PX-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz",
+          "note": "identical to TCGA-E9-A2JT-01"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-E2-A9RU-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz",
+          "note": "identical to TCGA-EW-A1PE-01"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-LL-A73Z-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz",
+          "note": "identical to TCGA-E9-A1N3-01"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-E2-A106-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz",
+          "note": "identical to TCGA-C8-A133-01"
+        }
+      ],
+      "affects_analyses": [
+        "A1"
+      ],
+      "not_affected_analyses": [
+        "A2"
+      ],
+      "limitation": "Identical profiles strongly suggest copies, not new measurements.",
+      "needs_human_review": true
+    },
+    {
+      "id": "F3",
+      "kind": "membership_change",
+      "summary": "Five Her2-subtype samples lost their protein data, though the total protein sample count is unchanged.",
+      "severity": "medium",
+      "confidence": "high",
+      "evidence": [
+        {
+          "kind": "sample",
+          "id": "TCGA-C8-A12Q-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz",
+          "note": "present in raw, absent in practice-B"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-GM-A2DH-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz",
+          "note": "present in raw, absent in practice-B"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-C8-A26Y-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz",
+          "note": "present in raw, absent in practice-B"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-E9-A1RH-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz",
+          "note": "present in raw, absent in practice-B"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-A8-A08J-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz",
+          "note": "present in raw, absent in practice-B"
+        }
+      ],
+      "affects_analyses": [
+        "A1"
+      ],
+      "not_affected_analyses": [
+        "A2"
+      ],
+      "limitation": "Protein coverage for the Her2 subtype drops; any per-subtype protein result is affected.",
+      "needs_human_review": true
+    }
+  ],
+  "analyses": [
+    {
+      "id": "A1",
+      "status": "changed",
+      "before": {
+        "n_samples": 698,
+        "n_positive": 529,
+        "n_negative": 169,
+        "mean_positive": 2.179,
+        "mean_negative": -0.872,
+        "difference": 3.051
+      },
+      "after": {
+        "n_samples": 699,
+        "n_positive": 533,
+        "n_negative": 166,
+        "mean_positive": 2.176,
+        "mean_negative": -0.843,
+        "difference": 3.019
+      }
+    },
+    {
+      "id": "A2",
+      "status": "unchanged",
+      "before": {
+        "n_samples": 844,
+        "counts": {
+          "Basal": 141,
+          "Her2": 67,
+          "LumA": 421,
+          "LumB": 192,
+          "Normal": 23
+        },
+        "percent": {
+          "Basal": 16.7,
+          "Her2": 7.9,
+          "LumA": 49.9,
+          "LumB": 22.7,
+          "Normal": 2.7
+        }
+      },
+      "after": {
+        "n_samples": 844,
+        "counts": {
+          "Basal": 141,
+          "Her2": 67,
+          "LumA": 421,
+          "LumB": 192,
+          "Normal": 23
+        },
+        "percent": {
+          "Basal": 16.7,
+          "Her2": 7.9,
+          "LumA": 49.9,
+          "LumB": 22.7,
+          "Normal": 2.7
+        }
+      }
+    }
+  ],
+  "repairs": [
+    {
+      "id": "R1",
+      "action": "restore_from_previous_release",
+      "targets": [
+        {
+          "kind": "sample",
+          "id": "TCGA-A8-A09K-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-B6-A0WX-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        }
+      ],
+      "justification": "Restore the two profiles as they were in the previous release until the swap is explained.",
+      "addresses": [
+        "F1"
+      ]
+    },
+    {
+      "id": "R2",
+      "action": "exclude",
+      "targets": [
+        {
+          "kind": "sample",
+          "id": "TCGA-LL-A5YN-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-GM-A5PX-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-E2-A9RU-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-LL-A73Z-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-E2-A106-01",
+          "release": "practice-B",
+          "file": "protein_rppa.tsv.gz"
+        }
+      ],
+      "justification": "Exclude the five duplicated profiles from protein analyses.",
+      "addresses": [
+        "F2"
+      ]
+    },
+    {
+      "id": "R3",
+      "action": "flag_for_review",
+      "targets": [
+        {
+          "kind": "sample",
+          "id": "TCGA-C8-A12Q-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-GM-A2DH-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-C8-A26Y-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-E9-A1RH-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        },
+        {
+          "kind": "sample",
+          "id": "TCGA-A8-A08J-01",
+          "release": "raw",
+          "file": "protein_rppa.tsv.gz"
+        }
+      ],
+      "justification": "Ask the data provider why these Her2 samples lost protein data.",
+      "addresses": [
+        "F3"
+      ]
+    },
+    {
+      "id": "R4",
+      "action": "exclude",
+      "targets": [
+        {
+          "kind": "analysis",
+          "id": "A2",
+          "note": "all Her2-subtype samples"
+        }
+      ],
+      "justification": "Remove Her2-subtype samples from the subtype mix because their protein data changed.",
+      "addresses": [
+        "F3"
+      ]
+    }
+  ]
+}

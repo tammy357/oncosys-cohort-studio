@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OncoSys hackathon findings (optional format, v0.1)",
+  "type": "object",
+  "required": ["format_version", "track", "dataset", "question", "verdict", "findings", "human_review"],
+  "properties": {
+    "format_version": {"const": "0.1"},
+    "team": {"type": "string"},
+    "track": {"enum": ["cohort-firewall", "evidence-navigator"]},
+    "dataset": {
+      "type": "object",
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": {"type": "string"},
+        "sha256": {"type": "string"},
+        "derived_from": {"type": "string"},
+        "documentation": {"type": "string"}
+      }
+    },
+    "question": {"type": "string"},
+    "verdict": {"enum": ["Ready", "Conditional", "Blocked", "Insufficient Evidence",
+                         "Proceed", "Fix a problem", "Narrow the question", "Stop"]},
+    "verdict_summary": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "what_was_found", "effect_on_question", "materiality", "confidence", "evidence"],
+        "properties": {
+          "finding_id": {"type": "string"},
+          "check_performed": {"type": "string"},
+          "fields_used": {"type": "array", "items": {"type": "string"}},
+          "rows_or_groups_affected": {"type": "string"},
+          "what_was_found": {"type": "string"},
+          "effect_on_question": {"type": "string"},
+          "materiality": {"enum": ["high", "medium", "low", "none"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence": {"type": "string"},
+          "limitation": {"type": "string"},
+          "recommended_next_step": {"type": "string"},
+          "needs_human_review": {"type": "boolean"}
+        }
+      }
+    },
+    "human_review": {
+      "type": "object",
+      "required": ["required"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "reviewer_role": {"type": "string"},
+        "what_to_confirm": {"type": "string"}
+      }
+    }
+  }
+}

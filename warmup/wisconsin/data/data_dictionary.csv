@@ -1,0 +1,16 @@
+column,origin,type,allowed_values,description
+source_row,added by organizers,integer,1-699,Row position in the official UCI file (data/breast-cancer-wisconsin.data). Use it to trace any result back to the source.
+sample_code,UCI raw file (field 1),integer,id number,Sample code number. Identifies a sample record; it does not by itself establish that two rows are the same person.
+clump_thickness,UCI raw file (field 2),integer,1-10,Clump thickness of cells in a fine-needle aspirate of a breast mass. Scored 1-10 by an examiner; higher values are more abnormal.
+uniformity_cell_size,UCI raw file (field 3),integer,1-10,Uniformity of cell size. Scored 1-10.
+uniformity_cell_shape,UCI raw file (field 4),integer,1-10,Uniformity of cell shape. Scored 1-10.
+marginal_adhesion,UCI raw file (field 5),integer,1-10,Marginal adhesion. Scored 1-10.
+single_epithelial_cell_size,UCI raw file (field 6),integer,1-10,Single epithelial cell size. Scored 1-10.
+bare_nuclei,UCI raw file (field 7),integer or empty,1-10,Bare nuclei. Scored 1-10. Empty where the official file has '?' (16 rows).
+bland_chromatin,UCI raw file (field 8),integer,1-10,Bland chromatin. Scored 1-10.
+normal_nucleoli,UCI raw file (field 9),integer,1-10,Normal nucleoli. Scored 1-10.
+mitoses,UCI raw file (field 10),integer,1-10,Mitoses. Scored 1-10.
+class_code,UCI raw file (field 11),integer,2 or 4,Class as coded by UCI: 2 = benign; 4 = malignant.
+class_label,added by organizers,text,benign or malignant,Text version of class_code.
+collection_group_derived,DERIVED by organizers,text,1-8,"Collection group reconstructed from row position using section 4 of breast-cancer-wisconsin.names. NOT recorded in the source data; treat as an assumption."
+collection_period_derived,DERIVED by organizers,text,YYYY-MM,"Month the collection group arrived, per section 4 of breast-cancer-wisconsin.names. Same caveat as collection_group_derived."

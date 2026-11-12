@@ -1,0 +1,51 @@
+{
+  "format_version": "0.1",
+  "team": "example-team",
+  "track": "cohort-firewall",
+  "dataset": {
+    "file": "practice/P1-sorted-with-source-rows/extract.csv",
+    "sha256": "635fa4b43f475781ca6665c93c3746bd93fc09bf36e08856b05140a52fab45b5",
+    "derived_from": "data/breast-cancer-wisconsin.data",
+    "documentation": "data/breast-cancer-wisconsin.names"
+  },
+  "question": "Can each row be assigned to its documented collection group?",
+  "verdict": "Ready",
+  "verdict_options": ["Ready", "Conditional", "Blocked", "Insufficient Evidence"],
+  "verdict_summary": "Collection groups can be recovered from source_row. Row order alone can't be used.",
+  "findings": [
+    {
+      "finding_id": "F1",
+      "check_performed": "Compared row order with source_row",
+      "fields_used": ["source_row"],
+      "rows_or_groups_affected": "All 699 rows",
+      "what_was_found": "Rows are sorted by sample_code, so file position no longer matches the official file.",
+      "effect_on_question": "Assigning groups by position would mislabel rows.",
+      "materiality": "high",
+      "confidence": "high",
+      "evidence": "source_row is not equal to file position for most rows",
+      "limitation": "Assumes source_row was copied correctly from the official file.",
+      "recommended_next_step": "Assign groups from source_row, not file position.",
+      "needs_human_review": false
+    },
+    {
+      "finding_id": "F2",
+      "check_performed": "Applied group boundaries from .names section 4 to source_row and compared counts",
+      "fields_used": ["source_row"],
+      "rows_or_groups_affected": "Groups 1-8",
+      "what_was_found": "Counts per recovered group match the documented sizes: 367, 70, 31, 17, 48, 49, 31, 86.",
+      "effect_on_question": "Groups can be recovered.",
+      "materiality": "high",
+      "confidence": "medium",
+      "evidence": "breast-cancer-wisconsin.names, section 4",
+      "limitation": "Group labels are derived from documentation, not recorded in the data.",
+      "recommended_next_step": "State the derivation wherever group results are shown.",
+      "needs_human_review": true
+    }
+  ],
+  "human_review": {
+    "required": true,
+    "reviewer_role": "Data-use reviewer",
+    "what_to_confirm": "That the derived group labels are acceptable for the intended use."
+  },
+  "out_of_scope_confirmed": "No classifier, diagnosis, risk score or clinical claim."
+}

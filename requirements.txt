@@ -1,0 +1,13 @@
+pandas>=2.0
+matplotlib>=3.7
+jupyter
+jsonschema>=4.0
+# image packs
+numpy
+pillow
+scikit-learn
+idc-index  # slides, CT and annotations from NCI Imaging Data Commons
+
+# Cohort Studio app
+streamlit>=1.50
+pytest

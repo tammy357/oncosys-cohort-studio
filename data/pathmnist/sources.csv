@@ -1,0 +1,5 @@
+file,size_px,source_url,md5,license,checksum_source
+pathmnist.npz,28,https://zenodo.org/records/10519652/files/pathmnist.npz?download=1,a8b06965200029087d5bd730944a56c1,CC BY 4.0,medmnist 3.0.2 package INFO
+pathmnist_64.npz,64,https://zenodo.org/records/10519652/files/pathmnist_64.npz?download=1,55aa9c1e0525abe5a6b9d8343a507616,CC BY 4.0,medmnist 3.0.2 package INFO
+pathmnist_128.npz,128,https://zenodo.org/records/10519652/files/pathmnist_128.npz?download=1,ac42d08fb904d92c244187169d1fd1d9,CC BY 4.0,medmnist 3.0.2 package INFO
+pathmnist_224.npz,224,https://zenodo.org/records/10519652/files/pathmnist_224.npz?download=1,2c51a510bcdc9cf8ddb2af93af1eadec,CC BY 4.0,medmnist 3.0.2 package INFO

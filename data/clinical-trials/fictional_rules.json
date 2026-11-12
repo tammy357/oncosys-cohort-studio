@@ -1,0 +1,7 @@
+{
+  "fixture": "Organizer-authored practice only; unrelated to any real study.",
+  "versions": [
+    {"id":"practice-v1","clause":"For this simulated exercise, the most recent fictional treatment must have occurred at least 30 days before the reference date.","min_days":30},
+    {"id":"practice-v2","clause":"For this simulated exercise, the most recent fictional treatment must have occurred at least 60 days before the reference date.","min_days":60}
+  ]
+}
