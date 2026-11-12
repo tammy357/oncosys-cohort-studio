@@ -201,6 +201,8 @@ def test_earliest_with_collection_dates(tmp_path):
     spec = parse_request("primary and metastatic tumours, earliest sample per patient", s)
     r = engine.run(spec, s)
     assert "TCGA-ZZ-0008-06" in r.cohort_ids and "TCGA-ZZ-0008-01" not in r.cohort_ids
+    check = next(c for c in verdict.evaluate(r, s).checks if c.name == "Sample collection days make sense")
+    assert check.status == "warn" and "TCGA-ZZ-0008" in check.detail     # metastasis dated before the primary
     out = exports.write_all(r, verdict.evaluate(r, s), s, tmp_path / "out")
     subprocess.run([sys.executable, str(out / "reproduce_cohort.py"), str(d), str(tmp_path / "again.csv")],
                    check=True, capture_output=True)

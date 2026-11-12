@@ -10,6 +10,7 @@ and they live in `cohort_studio/verdict.py`.
 | Files match the frozen checksums | every raw file matches `sources.csv` | | | a file changed |
 | No sample is counted twice | one row per sample at the end | | the final table has more rows than samples | |
 | One sample per patient | yes (a "one sample per patient" step lists every choice in `sample_selection.csv`), or several sample types were requested | some patients contribute several samples | | |
+| Sample collection days make sense (only for "earliest"/"latest") | no metastasis is dated before the same patient's primary tumor | "earliest" kept a metastasis over a primary tumor, which suggests the days don't follow surgery | | |
 | Enough patients | at least 20 | | fewer than 20 | |
 | The cohort still looks like where it started | no step moves submitting site, PAM50, ER, stage or age band by TVD ≥ 0.10, other than expected shifts (below) | a step (or the whole cohort) moves one by ≥ 0.10, and the move isn't expected | | |
 | Filter fields are recorded | each filter field is recorded for ≥ 80% of samples | ≥ 20% missing, so those samples were dropped | | |

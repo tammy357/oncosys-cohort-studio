@@ -134,6 +134,27 @@ def evaluate(result, store):
     else:
         checks.append(Check("One sample per patient", "pass", f"{n_ids:,} samples from {n_pat:,} patients."))
 
+    # 5b. Do the collection days make sense? (only when choosing the earliest or latest sample)
+    if chooser is not None and steps[chooser.index].get("rule") in ("earliest", "latest"):
+        types = store.manifest.set_index("sample_id")["sample_type"]
+        odd = [x for x in chooser.selection
+               if x["kept_type"] == "Metastatic" and any(types.get(d) == "Primary Tumor" for d in x["dropped"])
+               and steps[chooser.index]["rule"] == "earliest"]
+        no_day = [x for x in chooser.selection if "no collection day" in x["reason"]]
+        if odd:
+            checks.append(Check("Sample collection days make sense", "warn",
+                                f"For {len(odd)} of the {len(chooser.selection)} patients it chose for, the collection days "
+                                f"put a metastasis before the primary tumor (for example {odd[0]['patient_id']}), so "
+                                "'earliest' kept the metastasis. In TCGA, days_to_collection may record when tissue was "
+                                "procured for the project rather than when surgery happened.",
+                                "Check the chosen samples in sample_selection.csv, or choose by sample type instead.",
+                                fields=["days_to_collection"]))
+        else:
+            checks.append(Check("Sample collection days make sense", "pass",
+                                f"No patient's metastasis is dated before their primary tumor"
+                                + (f"; {len(no_day)} patients had no collection day and were chosen by sample type."
+                                   if no_day else "."), fields=["days_to_collection"]))
+
     # 6. Size
     if n_pat < MIN_PATIENTS:
         checks.append(Check("Enough patients to work with", "fail",
@@ -240,6 +261,9 @@ def limitations_for(result, store):
                    "BRCA alone. If you re-normalize inside this cohort (for example z-scores), every value depends on "
                    "which samples are in it, so the same tumor can score differently in another cohort. Normalize the "
                    "same way for every cohort you compare, and report how.")
+    if any(s.get("op") == "one_per_patient" and s.get("rule") in ("earliest", "latest") for s in steps):
+        out.append("'Earliest' and 'latest' use days_to_collection, which in TCGA may record when tissue was procured "
+                   "for the project rather than when surgery happened, so it isn't a reliable surgical timeline.")
     if any(s.get("op") == "one_per_patient" for s in steps):
         out.append("Choosing one sample per patient follows the stated rule, not a judgment about which sample is best "
                    "for your question. sample_selection.csv lists every choice so a person can check it.")
