@@ -1,0 +1,52 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel an older run on the same branch
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: frontend/requirements.txt
+
+      # Only what the tests need (not the full requirements.txt)
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas jsonschema pytest -r frontend/requirements.txt
+
+      # Re-download only when sources.csv changes
+      - name: Cache the TCGA-BRCA files
+        uses: actions/cache@v4
+        with:
+          path: data/tcga-brca/raw
+          key: tcga-brca-${{ hashFiles('data/tcga-brca/sources.csv') }}
+
+      # Fails if a checksum doesn't match
+      - name: Fetch the TCGA-BRCA files
+        run: python data/tcga-brca/fetch.py --no-rna
+
+      - name: Run the tests
+        run: python -m pytest -q
+
+      - name: Check the benchmark answer key still reproduces
+        if: hashFiles('evals/build_expected.py') != ''
+        run: python evals/build_expected.py --check

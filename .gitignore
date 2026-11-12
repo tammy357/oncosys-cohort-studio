@@ -19,3 +19,7 @@ output/
 .env
 # Web app's local database (searches, favourites, cached model replies)
 frontend/.data/
+
+# Parser benchmark runs and local environments
+evals/results/
+.venv/

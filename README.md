@@ -1,5 +1,7 @@
 # Cohort Studio
 
+[![tests](https://github.com/tammy357/oncosys-cohort-studio/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/tammy357/oncosys-cohort-studio/actions/workflows/tests.yml)
+
 **Track:** Cohort Firewall · **Product:** Cohort Studio (featured product, with a "who did we lose?" check added)
 **Event:** OncoSys Cancer AI Lab, Healthcare AI Hackathon at Northeastern, November 2026
 
@@ -16,9 +18,9 @@ see who the steps removed and get a verdict → export `cohort_samples.csv` and 
 |---|---|
 | Lily Tammy | [@tammy357](https://github.com/tammy357) |
 | Seth Barribeau | [@sethbarr](https://github.com/sethbarr) |
-| Hriday Desai | [@Dogtags27](https://github.com/Dogtags27) |
+| Hriday Desai | [@dogtags27](https://github.com/dogtags27) |
 | Aayam Raj Shakya | [@aayamrajshakya](https://github.com/aayamrajshakya) |
-| Yanyun Ma | [@github](https://github.com/github) |
+| Yanyun Ma | [@yanyun1112](https://github.com/yanyun1112) |
 
 **Demo video:** _add link here_
 
