@@ -144,6 +144,22 @@ def test_negative_for_er_pr_her2_is_triple_negative(store):
         run_fixed(parse_request("triple negative tumours", store), store).cohort_ids
 
 
+@pytest.mark.parametrize("request_text", [
+    "primary tumours where the same patient also contributed adjacent normal tissue",
+    "tumours whose patient also has adjacent normal tissue",
+    "primary tumours with matching normal tissue from the same patient",
+    "tumours with an adjacent normal sample"])
+def test_patient_also_has_normal_tissue_is_a_pairing(store, request_text):
+    # tumours whose patient has a normal sample (patients 1-3), not the normal samples themselves
+    assert sorted(run_fixed(parse_request(request_text, store), store).cohort_ids) == ids(1, 2, 3)
+
+
+def test_tumours_and_normal_samples_keeps_both_sample_types(store):
+    spec = parse_request("primary tumours and adjacent normal samples", store)
+    assert set(spec["steps"][0]["values"]) == {"Primary Tumor", "Solid Tissue Normal"}
+    assert not [s for s in spec["steps"] if s.get("table") == "normals"]
+
+
 @pytest.mark.parametrize("request_text", ["primary tumours with 2 or more slides", "HER2 3+ tumours"])
 def test_numbers_that_are_not_ages(request_text):
     assert not [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]

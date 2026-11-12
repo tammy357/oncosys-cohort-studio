@@ -152,7 +152,11 @@ def parse_request(text, store=None):
     # --- pairing with normal tissue ---
     pair = t.find(r"(?:matched|paired)[- ]normals?(?:[- ]tissue)?(?: samples?)?|tumou?r[- /]normal pairs?|"
                   r"(?:with|have|has|having|plus|and)\s+(?:a\s+|their\s+|its\s+)?(?:matched\s+|matching\s+)?normal[- ]tissue samples?|"
-                  r"(?:with|have|has|having)\s+(?:a\s+|their\s+)?normal samples?|also have (?:a )?normal(?: samples?)?|normal samples? from the same patients?",
+                  # "where the same patient also contributed adjacent normal tissue", "with an adjacent normal sample"
+                  r"(?:(?:where|whose|in which)\s+)?(?:the\s+same\s+)?(?:patients?\s+)?(?:also\s+)?"
+                  r"(?:with|have|has|had|having|contributed|provided|donated)\s+(?:a\s+|an\s+|their\s+)?"
+                  r"(?:matched\s+|matching\s+|adjacent\s+)?normal(?:[- ]tissue)?(?: samples?)?(?:\s+from the same patients?)?|"
+                  r"normal(?:[- ]tissue)? samples? from the same patients?",
                   "a normal-tissue sample from the same patient")
     add_normals = bool(pair) and bool(re.search(r"pairs?|and their normal|plus (?:their |the )?normal|include (?:the |their )?normal|"
                                                 r"both (?:the )?tumou?r and (?:the )?normal", t.lower))
