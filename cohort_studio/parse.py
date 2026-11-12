@@ -216,7 +216,9 @@ def parse_request(text, store=None):
         lo, hi = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
         t.understood.append({"phrase": m.group(0), "meaning": f"age at diagnosis {lo}-{hi}"})
         clin("age", "between", [int(lo), int(hi)], "")
-    age_rx = (r"(?:aged?\s*|(?:patients?|women|woman|men|man|people|cases|individuals)\s+(?:who are\s+|aged\s+)?)"
+    age_word = r"(?:aged?|age at (?:initial )?diagnosis(?: of)?)"
+    who = r"(?:patients?|women|woman|men|man|people|cases|individuals)"
+    age_rx = (rf"(?:{age_word}\s*|{who}\s+(?:who are\s+|aged\s+)?)"
               r"(over|above|older than|at least|>=|>|under|below|younger than|less than|at most|<=|<)\s*(\d{1,3})(?!\s*%)(?:\s*years?(?: old)?)?"
               r"|(over|above|older than|at least|>=|>|under|below|younger than|less than|at most|<=|<)\s*(\d{1,3})\s*(?:years?|yrs?)(?: old)?")
     for m in t.find(age_rx):
@@ -233,6 +235,21 @@ def parse_request(text, store=None):
             cmp, v = "lte", n
         t.understood.append({"phrase": m.group(0), "meaning": f"age at diagnosis {'≥' if cmp == 'gte' else '≤'} {v}"})
         clin("age", cmp, v, "")
+    # "50 or older", "40 and under", "aged 50+": the comparison comes after the number (both ends included).
+    # Without an age word in front, only "years" or older/younger make it an age ("2 or more slides" isn't).
+    words = r"older|over|above|up|more|younger|under|below|less"
+    years = r"(?:\s*years?(?: old)?)?"
+    age_after_rx = (rf"(?:{age_word}\s*|{who}\s+(?:aged\s+)?)(?P<n1>\d{{1,3}}){years}\s*(?:or|and)\s*(?P<w1>{words})\b{years}"
+                    rf"|(?<![\w.])(?P<n2>\d{{1,3}})(?:\s*years?(?: old)?\s*(?:or|and)\s*(?P<w2>{words})"
+                    rf"|\s*(?:or|and)\s*(?P<w3>older|younger))\b{years}"
+                    rf"|(?:{age_word}|{who})\s*(?P<n3>\d{{1,3}})\s*\+")
+    for m in t.find(age_after_rx):
+        n = int(m["n1"] or m["n2"] or m["n3"])
+        if n > 120:
+            continue
+        cmp = "lte" if (m["w1"] or m["w2"] or m["w3"]) in ("younger", "under", "below", "less") else "gte"
+        t.understood.append({"phrase": m.group(0), "meaning": f"age at diagnosis {'≥' if cmp == 'gte' else '≤'} {n}"})
+        clin("age", cmp, n, "")
 
     if t.find(r"(?:invasive |infiltrating )?ductal", "infiltrating ductal carcinoma"):
         clin("histology", "in", ["Infiltrating Ductal Carcinoma"], "")

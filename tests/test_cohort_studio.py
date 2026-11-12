@@ -119,6 +119,20 @@ def test_luminal_a_or_b_keeps_both(store, request_text):
     assert f["value"] == ["LumA", "LumB"]
 
 
+@pytest.mark.parametrize("request_text, cmp, value", [
+    ("patients aged 50 or older", "gte", 50), ("age at diagnosis >= 50", "gte", 50), ("patients 50 and older", "gte", 50),
+    ("women aged 50+", "gte", 50), ("50 years or older", "gte", 50), ("aged 40 or younger", "lte", 40),
+    ("age at diagnosis under 40", "lte", 39), ("patients over 50", "gte", 51), ("patients younger than 40", "lte", 39)])
+def test_age_phrasings(request_text, cmp, value):
+    [f] = [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]
+    assert (f["cmp"], f["value"]) == (cmp, value)
+
+
+@pytest.mark.parametrize("request_text", ["primary tumours with 2 or more slides", "HER2 3+ tumours"])
+def test_numbers_that_are_not_ages(request_text):
+    assert not [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]
+
+
 def test_single_luminal_subtype_still_works(store):
     [f] = [s for s in parse_request("luminal B tumours", store)["steps"] if s.get("field") == "pam50"]
     assert f["value"] == ["LumB"]
