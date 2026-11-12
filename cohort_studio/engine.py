@@ -11,6 +11,7 @@ import pandas as pd
 from . import ops
 from .data import EXPECTED_LINKS, FIELD_TO_COMPOSITION
 from .spec import JOIN_TABLES, LAYER_LABELS, clone, describe_step, validate
+from .stats import permutation_shift_tests
 
 PREFIX = {"slides": "slide", "clinical": "clin", "survival": "surv", "normals": "normal"}
 
@@ -87,14 +88,17 @@ def composition_shift(store, before_ids, after_ids, skip=()):
         return out
     b = comp.reindex(list(before_ids))
     a = comp.reindex(list(after_ids))
-    for col in comp.columns:
-        if col == "patient_id" or col in skip:
-            continue
+    cols = [c for c in comp.columns if c != "patient_id" and c not in skip]
+    tests = permutation_shift_tests(b, after_ids, cols)
+    for col in cols:
         d, biggest = tvd(b[col].dropna(), a[col].dropna())
         if d is not None:
             out[col] = {"tvd": round(d, 3), **biggest}
+            if col in tests:
+                out[col].update({"p_value": tests[col]["p_value"],
+                                 "random_tvd_median": tests[col]["random_tvd_median"],
+                                 "random_tvd_95": tests[col]["random_tvd_95"]})
     return out
-
 
 def _right_table(store, step):
     table = step["table"]

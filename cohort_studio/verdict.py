@@ -43,6 +43,11 @@ def _is_unknown(message):
     m = message.lower()
     return "isn't available" in m or "checksum" in m or "fetch.py" in m or "aren't recorded" in m
 
+def _p_note(info):
+    p = info.get("p_value")
+    if p is None:
+        return ""
+    return "; p < 0.001 vs random dropout" if p <= 0.001 else f"; p = {p:.3f} vs random dropout"
 
 def evaluate(result, store):
     spec = result.spec
@@ -180,8 +185,8 @@ def evaluate(result, store):
                                      for s, var, info in expected[:3]) + ".")
     if shifts or overall:
         parts = [f"step {s.index + 1} moved {var} by {info['tvd']:.2f} (largest change: {info['group']}, "
-                 f"{info['before_pct']}% → {info['after_pct']}%)" for s, var, info in shifts[:3]]
-        parts += [f"overall, {var} moved by {info['tvd']:.2f} ({info['group']}: {info['before_pct']}% → {info['after_pct']}%)"
+                 f"{info['before_pct']}% → {info['after_pct']}%{_p_note(info)})" for s, var, info in shifts[:3]]
+        parts += [f"overall, {var} moved by {info['tvd']:.2f} ({info['group']}: {info['before_pct']}% → {info['after_pct']}%{_p_note(info)})"
                   for var, info in list(overall.items())[:2]]
         checks.append(Check("The cohort still looks like the population it started from", "warn",
                             "; ".join(parts) + "." + expected_note,

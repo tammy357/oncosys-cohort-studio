@@ -25,6 +25,10 @@ mix is unchanged, 1 means no overlap. Fields the user filtered on are left out o
 overall shift), so a deliberate choice isn't reported as a bias. The overall shift compares the final cohort with
 the population after the first sample-type step.
 
+**Permutation p-value (shown, not yet used in the rule):** for each shift, the tool also draws the same number
+of samples at random from the step's input 1,000 times and reports how often random dropout moves the mix at
+least as much (`cohort_studio/stats.py`, fixed seed). The verdict still uses TVD ≥ 0.10 alone.
+
 **Expected shifts:** some characteristics are linked to what you filter on, so moving them is the point of the filter,
 not a bias. They are still reported (marked "expected", with the reason) but don't make the verdict Conditional on their
 own. The links, set in `cohort_studio/data.py`: ER, PR or HER2 status ↔ PAM50 subtype (and PR or HER2 → ER status);
