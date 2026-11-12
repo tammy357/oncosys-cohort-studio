@@ -11,7 +11,16 @@ see who the steps removed and get a verdict → export `cohort_samples.csv` and 
 
 > Research use only. Cohort Studio makes no diagnosis, treatment recommendation, risk score or clinical claim.
 
-**Team:** _add names or handles here_ · **Demo video:** _add link here_
+**Team:**
+| Name | GitHub |
+|---|---|
+| Lily Tammy | [@tammy357](https://github.com/tammy357) |
+| Seth Barribeau | [@sethbarr](https://github.com/sethbarr) |
+| Hriday Desai | [@Dogtags27](https://github.com/Dogtags27) |
+| Aayam Raj Shakya | [@aayamrajshakya](https://github.com/aayamrajshakya) |
+| Yanyun Ma | [@github](https://github.com/github) |
+
+**Demo video:** _add link here_
 
 ---
 
