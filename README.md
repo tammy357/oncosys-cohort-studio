@@ -167,4 +167,4 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 ## Third-party code
 
 pandas (BSD-3-Clause), Streamlit (Apache-2.0), Matplotlib (Matplotlib/PSF licence), jsonschema (MIT),
-pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
+pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause), psycopg (LGPL-3.0; the Postgres driver, used only when `DATABASE_URL` points at Postgres). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
