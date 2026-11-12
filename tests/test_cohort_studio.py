@@ -111,6 +111,19 @@ def test_triple_negative_is_blocked_for_size(store):
     assert verdict.evaluate(r, store).verdict == "Blocked"
 
 
+@pytest.mark.parametrize("request_text", ["luminal A or B tumours", "luminal B and A tumours", "luminal A/B tumours",
+                                          "luminal A, or B tumours", "luminal A and/or B tumours",
+                                          "luminal A or luminal B tumours", "luminal tumours"])
+def test_luminal_a_or_b_keeps_both(store, request_text):
+    [f] = [s for s in parse_request(request_text, store)["steps"] if s.get("field") == "pam50"]
+    assert f["value"] == ["LumA", "LumB"]
+
+
+def test_single_luminal_subtype_still_works(store):
+    [f] = [s for s in parse_request("luminal B tumours", store)["steps"] if s.get("field") == "pam50"]
+    assert f["value"] == ["LumB"]
+
+
 # ---------- verdict ----------
 def test_unparsed_words_need_confirmation(store):
     spec = parse_request("primary tumours with purity above 60%", store)

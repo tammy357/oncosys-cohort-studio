@@ -74,6 +74,10 @@ def parse_request(text, store=None):
 
     # --- PAM50 subtypes (before "normal" and "HER2") ---
     pam = []
+    # "luminal A or B": without this, "luminal A" matches and the lone "B" is silently dropped
+    if t.find(r"\blum(?:inal)?[- ]?([ab])\s*(?:,?\s*(?:and/or|or|and)|,|/|&)\s*(?:lum(?:inal)?[- ]?)?(?!\1)[ab]\b",
+              "PAM50 Luminal A or B"):
+        pam += ["LumA", "LumB"]
     for pattern, value, words in [
         (r"normal[- ]like", "Normal", "PAM50 Normal-like"),
         (r"her2[- ]?(?:enriched|e\b)", "Her2", "PAM50 HER2-enriched"),
