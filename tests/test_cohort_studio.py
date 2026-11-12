@@ -160,6 +160,23 @@ def test_tumours_and_normal_samples_keeps_both_sample_types(store):
     assert not [s for s in spec["steps"] if s.get("table") == "normals"]
 
 
+@pytest.mark.parametrize("request_text, expected", [
+    ("ER-positive tumours according to the 2012 TCGA Nature paper labels", {"ER_Status_nature2012": ["Positive"]}),
+    ("luminal A or B tumours per the Nature 2012 calls", {"PAM50_mRNA_nature2012": ["Luminal A", "Luminal B"]}),
+    ("ER-positive tumours", {"er_status": ["Positive"]}),
+    ("primary tumours with signature data", {})])
+def test_nature_2012_labels_switch_the_columns(request_text, expected):
+    assert {s["field"]: s["value"] for s in parse_request(request_text)["steps"] if s["op"] == "filter"} == expected
+
+
+@pytest.mark.skipif(not (REAL / "raw" / "clinical.tsv").exists(), reason="run data/tcga-brca/fetch.py first")
+def test_nature_2012_er_positive_on_real_data():
+    s = DataStore(REAL)
+    nature = run_fixed(parse_request("ER-positive tumours according to the 2012 TCGA Nature paper labels", s), s)
+    clinical = run_fixed(parse_request("ER-positive tumours", s), s)
+    assert (len(nature.cohort_ids), len(clinical.cohort_ids)) == (601, 808)
+
+
 @pytest.mark.parametrize("request_text", ["primary tumours with 2 or more slides", "HER2 3+ tumours"])
 def test_numbers_that_are_not_ages(request_text):
     assert not [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]

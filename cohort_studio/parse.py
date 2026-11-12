@@ -94,6 +94,11 @@ def parse_request(text, store=None):
     elif t.find(r"pam50(?: subtypes?| calls?| labels?)?|molecular subtypes?|intrinsic subtypes?|rna subtypes?", "PAM50 subtype is recorded"):
         clin("pam50", "notnull", None, "")
 
+    # --- label source: the 2012 TCGA Nature paper's calls instead of the clinical record ---
+    nature = t.find(r"(?:(?:according to|based on|using|from|per)\s+)?(?:the\s+)?(?:20\s?12\s+)?(?:tcga\s+)?\bnature\b(?:\s+20\s?12)?"
+                    r"(?:\s+(?:paper|study|publication))?(?:'?s)?(?:\s+(?:labels?|calls?|status))?",
+                    "use the 2012 TCGA Nature paper's labels")
+
     # --- receptors ---
     if t.find(r"triple[- ]negative|\btnbc\b", "ER, PR and HER2 all negative (clinical)"):
         for f in ("er_status", "pr_status", "her2_status"):
@@ -305,6 +310,20 @@ def parse_request(text, store=None):
     if t.find(r"(?:(?:joined|join|matched|linked)\s+)?(?:by|on|using)(?: the)? patient(?: id| barcode)?s?|patient[- ]level", "join on the patient barcode"):
         key = "patient_id"
         notes.append("Joins use the patient barcode, as requested. Patients with several samples may be counted twice; the ledger will show it.")
+
+    if nature:
+        # same filters, read from the paper's columns (its PAM50 values are spelled out)
+        columns = {"er_status": "ER_Status_nature2012", "pr_status": "PR_Status_nature2012",
+                   "her2_status": "HER2_Final_Status_nature2012", "pam50": "PAM50_mRNA_nature2012"}
+        pam50_names = {"LumA": "Luminal A", "LumB": "Luminal B", "Her2": "HER2-enriched", "Basal": "Basal-like",
+                       "Normal": "Normal-like"}
+        switched = [f for f in clinical_filters if f["field"] in columns]
+        for f in switched:
+            if f["field"] == "pam50" and isinstance(f["value"], list):
+                f["value"] = [pam50_names.get(v, v) for v in f["value"]]
+            f["field"] = columns[f["field"]]
+        if not switched:
+            notes.append("The 2012 Nature paper's labels cover ER, PR, HER2 and PAM50; the request names none of them.")
 
     # --- assemble steps in a readable order ---
     steps = [{"op": "sample_type", "values": types}]
