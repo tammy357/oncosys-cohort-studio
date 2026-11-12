@@ -4,7 +4,7 @@
   "cleanUrls": false,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://cohort-studio-api.onrender.com/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://oncosys-cohort-studio.onrender.com/api/:path*" },
     { "source": "/static/:path*", "destination": "/:path*" },
     { "source": "/compare", "destination": "/compare.html" }
   ],

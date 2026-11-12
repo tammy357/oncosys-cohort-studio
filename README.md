@@ -11,7 +11,16 @@ see who the steps removed and get a verdict → export `cohort_samples.csv` and 
 
 > Research use only. Cohort Studio makes no diagnosis, treatment recommendation, risk score or clinical claim.
 
-**Team:** _add names or handles here_ · **Demo video:** _add link here_
+**Team:**
+| Name | GitHub |
+|---|---|
+| Lily Tammy | [@tammy357](https://github.com/tammy357) |
+| Seth Barribeau | [@sethbarr](https://github.com/sethbarr) |
+| Hriday Desai | [@Dogtags27](https://github.com/Dogtags27) |
+| Aayam Raj Shakya | [@aayamrajshakya](https://github.com/aayamrajshakya) |
+| Yanyun Ma | [@github](https://github.com/github) |
+
+**Demo video:** _add link here_
 
 ---
 
@@ -158,4 +167,4 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 ## Third-party code
 
 pandas (BSD-3-Clause), Streamlit (Apache-2.0), Matplotlib (Matplotlib/PSF licence), jsonschema (MIT),
-pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
+pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause), psycopg (LGPL-3.0; the Postgres driver, used only when `DATABASE_URL` points at Postgres). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
