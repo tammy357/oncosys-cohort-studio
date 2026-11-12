@@ -101,6 +101,8 @@ def _right_table(store, step):
     if table == "slides":
         return ops.slides_of_kind(store.slides, step.get("slide_kinds") or [])
     if table == "normals":
+        if step.get("require_layers"):
+            return ops.normal_samples_with_layers(store.manifest, step["require_layers"])
         return ops.normal_samples(store.manifest)
     return store.table(table)
 
@@ -111,6 +113,9 @@ def _skip_columns_for(step):
     if step["op"] == "filter":
         col = FIELD_TO_COMPOSITION.get((step["table"], step["field"]))
         return {col} if col else set()
+    if step["op"] == "any_of":
+        cols = {FIELD_TO_COMPOSITION.get((step["table"], c.get("field"))) for c in step.get("conditions", [])}
+        return {c for c in cols if c}
     return set()
 
 
@@ -126,6 +131,10 @@ def _removed_reason(step):
         return "did not meet the filter (or the value is not recorded)"
     if op == "mutation":
         return "mutation call didn't match, or the sample has no mutation data"
+    if op == "exclude_layer":
+        return f"has {LAYER_LABELS.get(step['layer'], step['layer'])} data"
+    if op == "any_of":
+        return "met none of the conditions (or the values are not recorded)"
     if op == "one_per_patient":
         return "another sample from the same patient was kept"
     return "removed by this step"
@@ -153,6 +162,13 @@ def apply_step(frame, step, store):
         if rule in ("earliest", "latest"):
             time_col = f"{PREFIX['clinical']}.{store.resolve_field('clinical', 'collection_day')}"
         return ops.one_sample_per_patient(frame, rule, step.get("order"), time_col)
+    if op == "exclude_layer":
+        return ops.exclude_layer(frame, step["layer"])
+    if op == "any_of":
+        p = PREFIX[step["table"]]
+        conditions = [(f"{p}.{store.resolve_field(step['table'], c['field'])}", c["cmp"], c.get("value"))
+                      for c in step["conditions"]]
+        return ops.filter_any(frame, conditions)
     raise ValueError(f"Unknown step '{op}'")
 
 

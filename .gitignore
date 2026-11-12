@@ -16,3 +16,6 @@ data/clinical-trials/raw/
 # Cohort Studio outputs (regenerate with the app or CLI)
 output/
 .pytest_cache/
+.env
+# Web app's local database (searches, favourites, cached model replies)
+frontend/.data/

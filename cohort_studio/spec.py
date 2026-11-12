@@ -33,7 +33,7 @@ LAYER_LABELS = {"rna": "RNA expression", "protein": "protein (RPPA)", "mutation"
                 "copy_number": "copy-number", "survival": "curated survival", "clinical": "clinical"}
 CMP_WORDS = {"in": "is one of", "not_in": "is not", "notnull": "is recorded", "gte": "is at least",
              "lte": "is at most", "between": "is between", "stage_in": "is stage", "is_event": "had the event",
-             "contains": "contains"}
+             "contains": "contains", "in_raw": "is exactly"}
 
 
 def new_spec(request="", steps=None, parser="manual"):
@@ -66,7 +66,22 @@ def describe_step(step, store=None):
         how = ("one row per match" if step.get("mode", "rows") == "rows"
                else "keep each sample once if it has at least one match")
         extra = "; add those samples to the cohort" if step.get("add_to_cohort") else ""
+        if step["table"] == "normals" and step.get("require_layers"):
+            extra += "; the normal sample must have " + " and ".join(
+                LAYER_LABELS.get(x, x) for x in step["require_layers"]) + " data"
         return f"Join {t} on {step.get('key', 'sample_id')} ({how}{extra})"
+    if op == "exclude_layer":
+        return f"Exclude samples that have {LAYER_LABELS.get(step['layer'], step['layer'])} data"
+    if op == "any_of":
+        parts = []
+        for c in step.get("conditions", []):
+            label = TABLE_FIELDS.get(step.get("table"), {}).get(c.get("field"), {}).get("label", c.get("field"))
+            value = c.get("value")
+            if isinstance(value, list):
+                value = " or ".join(str(v) for v in value)
+            words = CMP_WORDS.get(c.get("cmp"), c.get("cmp"))
+            parts.append(f"{label} {words}" + (f" {value}" if value not in (None, "") else ""))
+        return "Keep samples where " + ", OR ".join(parts)
     if op == "filter":
         label = TABLE_FIELDS.get(step["table"], {}).get(step["field"], {}).get("label", step["field"])
         value = step.get("value")
@@ -114,6 +129,9 @@ def validate(spec, store):
             bad_kinds = [k for k in step.get("slide_kinds", []) or [] if k not in ops.SLIDE_KINDS]
             if bad_kinds:
                 problems.append((i, f"Unknown slide kind {bad_kinds}."))
+            bad_layers = [x for x in step.get("require_layers", []) or [] if x not in ops.LAYER_COLUMNS]
+            if bad_layers:
+                problems.append((i, f"Unknown data layer {bad_layers}."))
             joined.add(table)
         elif op == "filter":
             table = step.get("table")
@@ -143,6 +161,21 @@ def validate(spec, store):
                 elif store.available("clinical") and store.resolve_field("clinical", "collection_day") is None:
                     problems.append((i, "Sample collection dates aren't recorded in this release, so the "
                                         f"{rule} sample per patient can't be chosen."))
+        elif op == "exclude_layer":
+            if step.get("layer") not in ops.LAYER_COLUMNS:
+                problems.append((i, f"Unknown data layer '{step.get('layer')}'."))
+        elif op == "any_of":
+            table = step.get("table")
+            conditions = step.get("conditions") or []
+            if table not in joined:
+                problems.append((i, f"Join {table} before filtering on it."))
+            if len(conditions) < 2:
+                problems.append((i, "An 'any of' step needs at least two conditions."))
+            for c in conditions:
+                if store.available(table) and store.resolve_field(table, c.get("field")) is None:
+                    problems.append((i, f"This release has no column for '{c.get('field')}' in {table}."))
+                if c.get("cmp") not in CMP_WORDS:
+                    problems.append((i, f"Unknown comparison '{c.get('cmp')}'."))
         else:
             problems.append((i, f"Unknown step type '{op}'."))
     return problems
