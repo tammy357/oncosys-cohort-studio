@@ -238,10 +238,12 @@ def parse_request(text, store=None):
         clin("gender", "in", ["FEMALE"], "")
     if t.find(r"\b(?:male|men|man)\b", "recorded gender male"):
         clin("gender", "in", ["MALE"], "")
+    # "post (" / "pre (", not "post" / "pre": the labels read "Post (...)" and "Pre (...)", and a bare word
+    # would also match "Indeterminate (neither Pre or Postmenopausal)".
     if t.find(r"post[- ]?menopausal", "post-menopausal"):
-        clin("menopause", "contains", ["post"], "")
+        clin("menopause", "contains", ["post ("], "")
     if t.find(r"pre[- ]?menopausal", "pre-menopausal"):
-        clin("menopause", "contains", ["pre"], "")
+        clin("menopause", "contains", ["pre ("], "")
 
     # --- one sample per patient ---
     choose = None

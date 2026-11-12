@@ -227,6 +227,23 @@ def test_coverage_lists_every_variable(store):
 
 
 # ---------- the real committed manifests ----------
+def test_menopause_status(store):
+    # in the fixture, patients over 50 are post-menopausal: 2, 3, 4, 6, 7
+    assert sorted(run_fixed(parse_request("postmenopausal primary tumours", store), store).cohort_ids) == ids(2, 3, 4, 6, 7)
+    assert sorted(run_fixed(parse_request("pre-menopausal primary tumours", store), store).cohort_ids) == ids(1, 5, 8)
+
+
+@pytest.mark.skipif(not (REAL / "raw" / "clinical.tsv").exists(), reason="run data/tcga-brca/fetch.py first")
+def test_menopause_excludes_indeterminate_on_real_data():
+    """'Indeterminate (neither Pre or Postmenopausal)' contains both 'pre' and 'post' but is neither."""
+    s = DataStore(REAL)
+    status = s.table("clinical").set_index("sample_id")["menopause_status"]
+    for word, start in (("postmenopausal", "Post ("), ("premenopausal", "Pre (")):
+        cohort = run_fixed(parse_request(f"{word} primary tumours", s), s).cohort_ids
+        labels = set(status.reindex(list(cohort)))
+        assert len(labels) == 1 and labels.pop().startswith(start), word
+
+
 @pytest.mark.skipif(not (REAL / "sample_manifest.csv").exists(), reason="real manifests not present")
 def test_brief_demo_on_real_manifests():
     s = DataStore(REAL)
