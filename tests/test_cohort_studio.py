@@ -128,6 +128,22 @@ def test_age_phrasings(request_text, cmp, value):
     assert (f["cmp"], f["value"]) == (cmp, value)
 
 
+@pytest.mark.parametrize("request_text, expected", [
+    ("tumours negative for ER, PR and HER2", {"er_status": "Negative", "pr_status": "Negative", "her2_status": "Negative"}),
+    ("ER, PR and HER2 negative tumours", {"er_status": "Negative", "pr_status": "Negative", "her2_status": "Negative"}),
+    ("ER and PR positive, HER2 negative tumours", {"er_status": "Positive", "pr_status": "Positive", "her2_status": "Negative"}),
+    ("tumours positive for ER", {"er_status": "Positive"}),
+    ("ER-negative, PR-negative tumours", {"er_status": "Negative", "pr_status": "Negative"})])
+def test_one_sign_for_a_list_of_receptors(request_text, expected):
+    got = {s["field"]: s["value"][0] for s in parse_request(request_text)["steps"] if s.get("field", "").endswith("_status")}
+    assert got == expected
+
+
+def test_negative_for_er_pr_her2_is_triple_negative(store):
+    assert run_fixed(parse_request("tumours negative for ER, PR and HER2", store), store).cohort_ids == \
+        run_fixed(parse_request("triple negative tumours", store), store).cohort_ids
+
+
 @pytest.mark.parametrize("request_text", ["primary tumours with 2 or more slides", "HER2 3+ tumours"])
 def test_numbers_that_are_not_ages(request_text):
     assert not [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]

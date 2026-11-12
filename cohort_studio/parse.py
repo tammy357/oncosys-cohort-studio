@@ -98,12 +98,29 @@ def parse_request(text, store=None):
     if t.find(r"triple[- ]negative|\btnbc\b", "ER, PR and HER2 all negative (clinical)"):
         for f in ("er_status", "pr_status", "her2_status"):
             clin(f, "in", ["Negative"], "")
+
+    def receptor_field(name):
+        return ("er_status" if name in ("er", "estrogen receptor", "oestrogen receptor") else
+                "pr_status" if name in ("pr", "progesterone receptor") else "her2_status")
+
+    # One sign for a list: "negative for ER, PR and HER2", "ER and PR positive". Not "or" or "/":
+    # "ER or PR positive" usually means either one, which separate filters can't express.
+    rec = r"(?:er|pr|her2|her-2|estrogen receptor|oestrogen receptor|progesterone receptor)"
+    rec_list = rf"\b{rec}(?:\s*(?:,\s*(?:and\s+)?|&|\band\b)\s*{rec}\b)+"
+    for m in t.find(rf"\b(positive|negative) for ({rec_list}|\b{rec}\b)|({rec_list})\s*[- ]?\s*(positive|negative|\+|-(?![a-z]))"):
+        sign, names = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+        value = "Positive" if sign in ("+", "positive") else "Negative"
+        fields = list(dict.fromkeys(receptor_field(n) for n in re.findall(rec, names)))
+        t.understood.append({"phrase": m.group(0), "meaning": " and ".join(f.split("_")[0].upper() for f in fields)
+                             + f" {value.lower()} (clinical)"})
+        for f in fields:
+            clin(f, "in", [value], "")
+
     receptor_pattern = (r"\b(er|pr|her2|her-2|estrogen receptor|oestrogen receptor|progesterone receptor)"
                         r"\s*[- ]?\s*(?:status\s*)?(positive|negative|pos\b|neg\b|\+|-(?![a-z]))")
     for m in t.find(receptor_pattern):
         name, sign = m.group(1), m.group(2)
-        field = ("er_status" if name in ("er", "estrogen receptor", "oestrogen receptor") else
-                 "pr_status" if name in ("pr", "progesterone receptor") else "her2_status")
+        field = receptor_field(name)
         value = "Positive" if sign in ("+", "positive", "pos") else "Negative"
         t.understood.append({"phrase": m.group(0), "meaning": f"{field.split('_')[0].upper()} {value.lower()} (clinical)"})
         clin(field, "in", [value], "")
