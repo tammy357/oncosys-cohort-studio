@@ -645,6 +645,26 @@ def test_a_step_the_checker_drops_is_named_in_the_verdict_never_blank(store, cat
     assert check.status == "unknown" and "NOT applied" in check.detail
 
 
+def test_lowercase_english_words_are_not_read_as_genes(cat, monkeypatch):
+    """'one sample per patient' named the gene PER in the prompt, and the model added a PER mutation step (eval run)."""
+    monkeypatch.setattr(cat, "genes", set(cat.genes) | {"PER", "SET"})
+    monkeypatch.setattr(cat, "gene_mutated_count", lambda gene: 0)        # the fixture has no rows for them
+    found = cat.gene_mentions("one sample per patient across all sample types, set of TP53 tumours")
+    assert [g["gene"] for g in found] == ["TP53"]
+    assert [g["gene"] for g in cat.gene_mentions("PER-mutant and tp-53 tumours")] == ["PER", "TP53"]
+
+
+def test_written_out_values_match_the_stored_codes(store, cat):
+    """The model wrote 'Basal-like' and the PAM50 filter was dropped as unsupported (eval run)."""
+    for written, stored in (("Basal-like", "Basal"), ("Luminal A", "LumA"), ("luminal-b", "LumB"),
+                            ("HER2-enriched", "Her2")):
+        chk = Checker(store, cat)
+        out = chk.check_steps([PT, JC, F("pam50", "in", [written])])
+        assert out[-1]["value"] == [stored] and not chk.unsupported, written
+    chk = Checker(store, cat)
+    assert chk.check_steps([PT, JC, F("pam50", "in", ["Luminal C"])]) == [PT, JC] and chk.unsupported
+
+
 def test_raw_conditions_with_wrong_types_are_rejected_not_misread(store):
     for cond in ({"gene": ["TP53"]}, {"layer": ["rna"]}, {"gene": "TP53", "mutated": "no"},
                  {"table": "clinical", "field": "er_status", "cmp": "in", "value": "Negative"},   # read letter by letter
