@@ -632,6 +632,19 @@ def test_a_slide_field_inside_a_condition_is_reported_not_a_crash(store, cat):
     assert chk.check_steps([F("slide_kind", "in", ["diagnostic"], table="slides")]) == [] and chk.unsupported
 
 
+def test_a_step_the_checker_drops_is_named_in_the_verdict_never_blank(store, cat):
+    """A dropped step becomes an 'unused words' entry; the verdict explains each one, so none may be blank."""
+    chk = Checker(store, cat)
+    chk.check_steps([PT, {"op": "filter", "table": "clinical", "cmp": "in", "value": ["x"]},     # no field
+                     {"op": "where", "condition": {"any": [ER_NEG, {"table": "clinical", "cmp": "in", "value": ["x"]}]}}])
+    phrases = [u["phrase"] for u in chk.unsupported]
+    assert len(phrases) == 2 and all(p.strip() for p in phrases)
+    spec = {"request": "t", "steps": [PT], "unparsed": phrases}
+    check = next(c for c in verdict.evaluate(engine.run(spec, store), store).checks
+                 if c.name == "The whole request was turned into steps")
+    assert check.status == "unknown" and "NOT applied" in check.detail
+
+
 def test_raw_conditions_with_wrong_types_are_rejected_not_misread(store):
     for cond in ({"gene": ["TP53"]}, {"layer": ["rna"]}, {"gene": "TP53", "mutated": "no"},
                  {"table": "clinical", "field": "er_status", "cmp": "in", "value": "Negative"},   # read letter by letter

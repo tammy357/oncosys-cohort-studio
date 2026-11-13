@@ -105,6 +105,7 @@ class Checker:
                 step = self.check_step(copy.deepcopy(raw))
             except _Unsupported as exc:
                 phrase, reason = exc.args
+                phrase = str(phrase).strip() or f"a {raw.get('op') or 'step'} step"   # never blank: it's shown as unused words
                 self.unsupported.append({"phrase": phrase, "reason": reason, "alternative": None, "source": "check"})
                 continue
             if step is not None:
@@ -367,7 +368,9 @@ class Checker:
         if table not in ("clinical", "survival"):
             raise _Unsupported(str(cond.get("field") or table), f"Fields can be tested in the clinical and survival "
                                                                  f"tables, not '{table}'. Use a join or a slide test.")
-        field = str(cond.get("field", "")).strip()
+        field = str(cond.get("field") or "").strip()
+        if not field:
+            raise _Unsupported(f"a {table} filter with no field", "The draft wrote a filter without naming the field it tests.")
         cmp = str(cond.get("cmp", "in")).strip().lower()
         cmp = CMP_ALIASES.get(cmp, cmp)
         value = cond.get("value")
