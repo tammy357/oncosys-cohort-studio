@@ -152,12 +152,12 @@ For clients configured with JSON (e.g. Claude Desktop):
 
 | Limit | Default |
 |---|---|
-| AI requests per person (browser or command-line user) per day | 100 |
-| AI requests per network address per day (everyone behind it shares this) | 400 |
+| AI requests per person (browser or command-line user) per day | 500 |
+| AI requests per network address per day (everyone behind it shares this) | 1,000 |
 | AI requests per person per minute | 10 |
 | Estimated model spend for the whole service per day | $4; after that everyone gets the built-in parser until 00:00 UTC |
 
-A personal token raises your daily number to 500. To use one, set `COHORT_STUDIO_API_TOKEN` in your environment or
+A personal token raises your daily number to 1,000. To use one, set `COHORT_STUDIO_API_TOKEN` in your environment or
 your git-ignored `.env`, and never commit it. Ask the team for a token. Over a limit nothing breaks: the built-in
 parser drafts the steps and the output says why. Your own key is never limited by the service.
 
@@ -476,8 +476,8 @@ Set these in the host's environment settings, never in a committed file:
 | `OPENAI_API_KEY` | The model key (or `ANTHROPIC_API_KEY` with `COHORT_STUDIO_PROVIDER=anthropic`) | none |
 | `DATABASE_URL` | Postgres for searches, the model cache and the usage counts | local SQLite |
 | `COHORT_STUDIO_DAILY_BUDGET_USD` | Estimated model spend per UTC day for the whole service | `4` |
-| `COHORT_STUDIO_USER_DAILY_LIMIT` / `COHORT_STUDIO_TOKEN_DAILY_LIMIT` | AI requests per person per day, without / with a token | `100` / `500` |
-| `COHORT_STUDIO_IP_DAILY_LIMIT` | AI requests per network address per day (without a token) | `400` |
+| `COHORT_STUDIO_USER_DAILY_LIMIT` / `COHORT_STUDIO_TOKEN_DAILY_LIMIT` | AI requests per person per day, without / with a token | `500` / `1000` |
+| `COHORT_STUDIO_IP_DAILY_LIMIT` | AI requests per network address per day (without a token); keep it above the per-person number | `1000` |
 | `COHORT_STUDIO_PER_MINUTE_LIMIT` | AI requests per person per minute | `10` |
 | `COHORT_STUDIO_API_TOKENS` | Personal tokens, `name:token,name:token` (each at least 16 characters) | none |
 | `COHORT_STUDIO_REQUIRE_TOKEN` | `on`: `/api/v1` and `/mcp` answer only token holders (the web app stays open) | `off` |
