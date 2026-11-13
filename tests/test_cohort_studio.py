@@ -345,3 +345,26 @@ def test_one_sample_per_patient_on_real_manifests():
     assert len(r.cohort_ids) == r.final_patients == 1097
     sel = exports.selection_frame(r)
     assert len(sel) == 7 and set(sel["kept sample type"]) == {"Primary Tumor"}
+
+
+# ---------- unused words are explained, not just listed ----------
+@pytest.mark.parametrize("request_text, expect", [
+    ("primary tumours from patients oder than 50", ["number 50", "'oder' may mean 'older'"]),
+    ("primary tumours with RNA but no protein data", ["'but no' wasn't applied"]),
+    ("stage three primary tumours", ["three", "write them as digits"]),
+])
+def test_unused_words_say_which_filter_was_not_applied(store, request_text, expect):
+    spec = parse_request(request_text, store)
+    v = verdict.evaluate(engine.run(spec, store), store)
+    assert v.verdict != "Ready"          # the small fixture is also Blocked for size
+    check = next(c for c in v.checks if c.name == "The whole request was turned into steps")
+    assert check.status == "unknown"
+    assert "NOT applied" in check.detail
+    for e in expect:
+        assert e in check.detail
+
+
+def test_but_alone_is_not_called_a_dropped_exclusion():
+    from cohort_studio.verdict import explain_unused
+    text = explain_unused(["but", "count", "once"])
+    assert "leave out" not in text and "NOT applied" in text

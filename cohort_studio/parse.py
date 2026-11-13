@@ -18,6 +18,8 @@ type types level levels show me give find get list select build make want need i
 like just one least some them it its per not no without set group people individuals subjects tissue tissues
 """.split())
 
+NEGATIONS = {"no", "not", "without", "except", "excluding", "never", "non", "neither", "nor", "but"}
+
 NOT_GENES = {"ER", "PR", "HER2", "RNA", "DNA", "TCGA", "BRCA", "PAM50", "FFPE", "OS", "PFI", "PFS", "DSS", "DFI",
              "DFS", "CNV", "CNA", "RPPA", "IHC", "WSI", "DX", "AND", "WITH", "THE", "TNBC", "MC3", "AJCC", "LUMA", "LUMB"}
 ROMAN = {"1": "I", "2": "II", "3": "III", "4": "IV", "i": "I", "ii": "II", "iii": "III", "iv": "IV"}
@@ -48,8 +50,10 @@ class _Text:
 
     def leftover_words(self):
         chars = [c if not u else " " for c, u in zip(self.original, self.used)]
-        words = re.findall(r"[A-Za-z][A-Za-z0-9+\-]*", "".join(chars))
-        return [w for w in words if w.lower().strip("-") not in STOPWORDS and len(w) > 1]
+        words = re.findall(r"[A-Za-z][A-Za-z0-9+\-]*|[<>=]*\d+(?:\.\d+)?\+?%?", "".join(chars))
+        # Numbers and negations are never filler: if no rule used them, a limit or an exclusion was dropped.
+        return [w for w in words if w.lower() in NEGATIONS or w[0] in "<>=0123456789"
+                or (w.lower().strip("-") not in STOPWORDS and len(w) > 1)]
 
 
 def _stage_values(a, b=None, joiner=None):

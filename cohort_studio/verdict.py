@@ -57,6 +57,49 @@ def _p_note(info):
         return ""
     return "; p < 0.001 vs random dropout" if p <= 0.001 else f"; p = {p:.3f} vs random dropout"
 
+# Words the parser knows, used to spot likely typos in unused words ("oder" → "older").
+_KNOWN_WORDS = """older younger over under above below between aged age negative positive protein rppa rna expression
+mutation mutated mutant wild-type stage triple basal luminal her2-enriched normal-like primary metastatic metastasis
+tumour tumours tumor tumors normal adjacent matched survival overall progression-free deceased died dead alive
+lobular ductal invasive infiltrating mucinous postmenopausal premenopausal perimenopausal menopause frozen diagnostic
+slide slides copy number estrogen oestrogen progesterone receptor subtype radiation male female men women""".split()
+_NUMBER_WORDS = set("""zero one two three four five six seven eight nine ten eleven twelve twenty thirty forty fifty sixty
+seventy eighty ninety hundred""".split())
+
+
+def explain_unused(words):
+    """Say plainly what unused words might mean, so a too-broad cohort doesn't look finished."""
+    import difflib
+    lower = [w.lower() for w in words]
+    notes = []
+    real = [w for w in words if w.lower() in ("no", "not", "without", "except", "excluding", "never", "non",
+                                              "neither", "nor")]
+    neg = ([w for w in words if w.lower() == "but"][:1] + real) if real else []
+    if neg:
+        notes.append(f"'{' '.join(neg)}' wasn't applied, so the cohort may include what you asked to leave out")
+    nums = [w for w in words if w[0] in "<>=0123456789"]
+    if nums:
+        notes.append(f"the number{'s' if len(nums) > 1 else ''} {', '.join(nums)} "
+                     f"{'weren' if len(nums) > 1 else 'wasn'}'t used, so an age, stage or other limit may be missing")
+    spelled = [w for w in words if any(p in _NUMBER_WORDS for p in w.lower().split("-"))]
+    if spelled:
+        notes.append(f"numbers written as words ({', '.join(spelled)}) aren't read: write them as digits")
+    typos = []
+    for w, lw in zip(words, lower):
+        if lw in _KNOWN_WORDS or w in neg or w in nums or w in spelled:
+            continue
+        close = difflib.get_close_matches(lw, _KNOWN_WORDS, n=1, cutoff=0.75)
+        if close:
+            typos.append(f"'{w}' may mean '{close[0]}'")
+    if typos:
+        notes.append("; ".join(typos) + ", and that filter wasn't applied")
+    head = f"These words were not used: {', '.join(words)}."
+    if not notes:
+        return head + " The filters they describe were NOT applied, so the cohort may be broader than you asked."
+    return (head + " The cohort may be broader than you asked, because some filters were NOT applied: "
+            + "; ".join(notes) + ".")
+
+
 def evaluate(result, store):
     spec = result.spec
     steps = spec.get("steps", [])
@@ -77,8 +120,9 @@ def evaluate(result, store):
     unparsed = spec.get("unparsed") or []
     if unparsed and not spec.get("unparsed_confirmed"):
         checks.append(Check("The whole request was turned into steps", "unknown",
-                            f"These words were not used: {', '.join(unparsed)}.",
-                            "Add a step for them, or confirm they don't change the cohort."))
+                            explain_unused(unparsed),
+                            "Rewrite the request (for example 'stage 3' or 'older than 50') or add the missing step, "
+                            "or confirm the unused words don't change the cohort."))
     else:
         detail = "Every part of the request maps to a step." if not unparsed else \
             f"Unused words ({', '.join(unparsed)}) were confirmed as not changing the cohort."
