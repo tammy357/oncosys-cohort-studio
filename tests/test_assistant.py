@@ -191,9 +191,17 @@ def test_questions_carry_real_counts_and_answers_build_the_spec(store, cat):
 def test_unanswered_question_needs_confirmation(store, cat):
     d = assemble("hormone receptor positive tumours", HR_REPLY, store, cat)
     spec = to_spec(d)
-    assert "Which definition?" in spec["unparsed"]
+    # an open reading, not an unused word: it gets its own check and wording
+    assert not spec["unparsed"] and any(u.startswith("Which definition?") for u in spec["unconfirmed"])
     r = engine.run(spec, store)
-    assert verdict.evaluate(r, store).verdict in ("Insufficient Evidence", "Blocked")
+    v = verdict.evaluate(r, store)
+    assert v.verdict in ("Insufficient Evidence", "Blocked")       # the fixture is small enough to be Blocked too
+    check = next(c for c in v.checks if c.name == "Every open reading of the request was confirmed")
+    assert check.status == "unknown" and "Which definition?" in check.detail
+    assert next(c for c in v.checks if c.name == "The whole request was turned into steps").status == "pass"
+    spec["unparsed_confirmed"] = True                  # a person confirmed the draft
+    v = verdict.evaluate(engine.run(spec, store), store)
+    assert next(c for c in v.checks if c.name == "Every open reading of the request was confirmed").status == "pass"
 
 
 def test_question_that_doesnt_change_the_cohort_is_not_asked(store, cat):
@@ -293,7 +301,8 @@ def test_streamlit_and_cli_ai_path_uses_the_assistant(monkeypatch, store):
     monkeypatch.setattr(LLMClient, "complete_json", lambda self, s, u: (json.loads(json.dumps(HR_REPLY)), {}, False))
     spec, problems = llm.ai_parse("hormone receptor positive tumours", store, provider="openai", api_key="not-real")
     assert not problems and spec["parser"].startswith("ai:")
-    assert any("The AI has a question" in n for n in spec["notes"]) and "Which definition?" in spec["unparsed"]
+    assert any("The AI has a question" in n for n in spec["notes"])
+    assert any(u.startswith("Which definition?") for u in spec["unconfirmed"])
     assert sorted(engine.run(spec, store).cohort_ids) == ids(1, 2, 4, 6, 7, 8)
 
 
@@ -378,7 +387,9 @@ def test_prompt_rules_for_endpoints_per_patient_and_her2():
     from cohort_studio.assistant.prompt import RULES
     assert "Naming an endpoint" in RULES                       # 'progression-free interval' is a name, not an event
     assert "only when the request asks for the earliest" in RULES
-    assert "her2_immunohistochemistry_level_result only when the request names a score" in RULES
+    assert "her2_status (TCGA's recorded HER2 status by IHC)" in RULES      # plain 'HER2 positive' is the status
+    assert "when the request names a score (0, 1+, 2+, 3+) or a category defined by scores" in RULES
+    assert "never just one of the groups" in RULES                         # compare / split / balance: not steps
 
 
 # ---------- the 'where' step: AND / OR / NOT across tables, layers, genes and slides ----------

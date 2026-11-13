@@ -30,7 +30,7 @@ def main(argv=None):
     ap.add_argument("--data-dir", help="folder with sample_manifest.csv (default: data/tcga-brca)")
     ap.add_argument("--out", default="output", help="folder for cohort_samples.csv and the other exports")
     ap.add_argument("--no-fix", action="store_true", help="don't fix inflating joins (shows the problem only)")
-    ap.add_argument("--accept-unparsed", action="store_true", help="confirm that unused words don't change the cohort")
+    ap.add_argument("--accept-unparsed", action="store_true", help="confirm that unused words don't change the cohort and that open readings are what you meant")
     ap.add_argument("--rules", action="store_true", help="built-in parser only: no AI, nothing leaves this computer")
     ap.add_argument("--no-hosted", action="store_true", help="your own key or local model only, never the hosted service")
     ap.add_argument("--ai", choices=["anthropic", "openai"], help="which provider your own key is for (default: "
@@ -91,6 +91,8 @@ def report(run, store):
         print(f"  note: {note}")
     if spec.get("unparsed"):
         print(f"  not used: {', '.join(spec['unparsed'])}")
+    for reading in spec.get("unconfirmed") or []:
+        print(f"  not confirmed: {reading}")
     print_ledger(run.first_result)
     if run.fixes:
         print("\nFixed the join inflation:")

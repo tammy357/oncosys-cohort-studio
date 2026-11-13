@@ -127,6 +127,17 @@ def evaluate(result, store):
         detail = "Every part of the request maps to a step." if not unparsed else \
             f"Unused words ({', '.join(unparsed)}) were confirmed as not changing the cohort."
         checks.append(Check("The whole request was turned into steps", "pass", detail))
+    # 2b. Readings of the request that the draft settled without anyone choosing them (a default answer to a question,
+    #     the only answer that runs, or a reading the comparison found open). Confirming the draft confirms them.
+    unconfirmed = spec.get("unconfirmed") or []
+    if unconfirmed and not spec.get("unparsed_confirmed"):
+        checks.append(Check("Every open reading of the request was confirmed", "unknown",
+                            "Nobody has confirmed how these parts of the request were read: " + "; ".join(unconfirmed)
+                            + ". A different reading would select a different cohort.",
+                            "Answer the question or edit the steps, or confirm these readings are what you meant."))
+    elif unconfirmed:
+        checks.append(Check("Every open reading of the request was confirmed", "pass",
+                            "A person confirmed these readings: " + "; ".join(unconfirmed) + "."))
 
     # 3. Frozen files
     used = {"sample_manifest.csv"}
