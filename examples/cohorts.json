@@ -1,0 +1,16 @@
+{
+  "cohorts": [
+    "primary tumors with both RNA and protein data and a diagnostic slide",
+    {"name": "er-negative-or-tp53", "request": "ER-negative or TP53-mutated primary tumours"},
+    {
+      "name": "tumour-normal-pairs-with-rna",
+      "request": "tumour-normal pairs where both samples have RNA data",
+      "steps": [
+        {"op": "sample_type", "values": ["Primary Tumor"]},
+        {"op": "layer", "layer": "rna"},
+        {"op": "join", "table": "normals", "key": "patient_id", "mode": "rows", "add_to_cohort": true,
+         "require_layers": ["rna"]}
+      ]
+    }
+  ]
+}

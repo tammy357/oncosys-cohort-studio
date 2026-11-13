@@ -9,8 +9,9 @@ import json
 import pathlib
 import uuid
 
-from sqlalchemy import (Column, DateTime, Integer, MetaData, String, Table, Text, create_engine, delete, insert, select,
-                        update)
+from sqlalchemy import (Column, DateTime, Float, Integer, MetaData, String, Table, Text, create_engine, delete, insert,
+                        select, update)
+from sqlalchemy.exc import IntegrityError
 
 meta = MetaData()
 
@@ -66,6 +67,12 @@ llm_cache = Table("llm_cache", meta,
                   Column("created_at", DateTime, nullable=False),
                   Column("text", Text, nullable=False),
                   Column("usage_json", Text))
+
+ai_usage = Table("ai_usage", meta,                               # AI requests and estimated spend per UTC day
+                 Column("day", String(10), primary_key=True),        # 2026-11-14
+                 Column("key", String(160), primary_key=True),       # global | caller:<who> | ip:<address>
+                 Column("calls", Integer, nullable=False),
+                 Column("cost_usd", Float, nullable=False))
 
 
 def _now():
@@ -220,6 +227,28 @@ class Storage:
     def delete_favorite(self, user, fav_id):
         with self.engine.begin() as c:
             return c.execute(delete(favorites).where((favorites.c.id == fav_id) & (favorites.c.user_id == user))).rowcount
+
+    # ---------- AI usage (limits.py) ----------
+    def usage(self, day, key):
+        with self.engine.connect() as c:
+            row = c.execute(select(ai_usage.c.calls, ai_usage.c.cost_usd)
+                            .where((ai_usage.c.day == day) & (ai_usage.c.key == key))).first()
+        return {"calls": int(row.calls), "cost": float(row.cost_usd)} if row else {"calls": 0, "cost": 0.0}
+
+    def add_usage(self, day, key, calls, cost):
+        where = (ai_usage.c.day == day) & (ai_usage.c.key == key)
+        for attempt in range(2):           # two first requests of the day at once: the loser updates the winner's row
+            try:
+                with self.engine.begin() as c:
+                    if c.execute(select(ai_usage.c.key).where(where)).first():
+                        c.execute(update(ai_usage).where(where).values(calls=ai_usage.c.calls + calls,
+                                                                       cost_usd=ai_usage.c.cost_usd + cost))
+                    else:
+                        c.execute(insert(ai_usage).values(day=day, key=key, calls=calls, cost_usd=cost))
+                return
+            except IntegrityError:
+                if attempt:
+                    raise
 
     # ---------- drafts ----------
     def save_draft(self, user, query, draft):

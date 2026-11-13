@@ -14,7 +14,6 @@ import streamlit as st
 from cohort_studio import engine, exports, verdict
 from cohort_studio.data import DataStore
 from cohort_studio.editor import COLUMNS, STEP_TYPES, steps_to_table, table_to_steps
-from cohort_studio.parse import parse_request
 from cohort_studio.spec import describe_step, new_spec
 
 matplotlib.use("Agg")
@@ -87,16 +86,18 @@ with st.sidebar:
         st.warning("Clinical, survival and mutation files aren't downloaded. Run `python data/tcga-brca/fetch.py --no-rna`, "
                    "then restart. Manifest-only cohorts (sample types, data layers, slides) still work.")
 
-    st.header("AI (optional)")
-    use_ai = st.toggle("Draft steps with an AI model", value=False, key="use_ai",
-                       help="Off by default. The built-in parser needs no key. The AI only drafts the steps; "
-                            "every count comes from the data.")
-    provider = st.selectbox("Provider", ["anthropic", "openai"], key="provider",
-                            help="'openai' works with any OpenAI-compatible endpoint, including a local model.")
-    api_key = st.text_input("Your API key (not stored)", type="password", key="api_key")
-    model = st.text_input("Model (optional)", key="model")
-    base_url = st.text_input("Base URL (OpenAI-compatible, optional)", key="base_url",
-                             help="For a local model, e.g. http://localhost:11434/v1 for Ollama.")
+    st.header("AI drafting")
+    use_ai = st.toggle("Draft steps with AI", value=True, key="use_ai",
+                       help="Uses your own key or local model if set (below, the environment or .env), otherwise "
+                            "the hosted Cohort Studio service, otherwise the built-in parser. The AI only drafts "
+                            "the steps; every count comes from the data. Off = built-in parser only.")
+    with st.expander("Use your own key or a local model (optional)"):
+        provider = st.selectbox("Provider", ["openai", "anthropic"], key="provider",
+                                help="'openai' works with any OpenAI-compatible endpoint, including a local model.")
+        api_key = st.text_input("Your API key (not stored)", type="password", key="api_key")
+        model = st.text_input("Model (optional)", key="model")
+        base_url = st.text_input("Base URL (OpenAI-compatible, optional)", key="base_url",
+                                 help="For a local model, e.g. http://localhost:11434/v1 for Ollama.")
 
     st.header("Export")
     team = st.text_input("Team name (for findings.json)", "Cohort Studio team", key="team")
@@ -117,19 +118,15 @@ for c, ex in zip(cols, EXAMPLES):
 request = st.text_area("Cohort in plain English", key="request", height=70,
                        placeholder="e.g. primary tumors with both RNA and protein data and a diagnostic slide")
 if st.button("Draft the steps", type="primary", disabled=not request.strip()):
-    spec = None
-    if use_ai:
-        from cohort_studio.llm import AIUnavailable, ai_parse
-        try:
-            spec, problems = ai_parse(request, store, provider=provider, api_key=api_key or None,
-                                      model=model or None, base_url=base_url or None)
-            if problems:
-                st.warning("The AI draft has problems, so the built-in parser was used instead: "
-                           + "; ".join(m for _, m in problems))
-                spec = None
-        except AIUnavailable as exc:
-            st.warning(str(exc))
-    set_spec(spec or parse_request(request, store))
+    from cohort_studio.llm import draft_spec
+    own = bool(api_key or base_url)
+    with st.spinner("Drafting the steps (the hosted AI service can take up to a minute to wake up)..."):
+        spec, route = draft_spec(request, store, ai="auto" if use_ai else "off", provider=provider if own else None,
+                                 api_key=api_key or None, model=model or None, base_url=base_url or None)
+    st.session_state.route = route
+    set_spec(spec)
+if st.session_state.get("route"):
+    st.caption(f"Drafted by: {st.session_state.route['label']}")
 
 spec = st.session_state.get("spec")
 if not spec:
