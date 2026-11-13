@@ -17,6 +17,7 @@ import pathlib
 import sys
 
 from . import exports
+from .verdict import PROBLEM_HEADLINES
 from .api import as_query, build_cohort, folder_name, load_queries
 from .data import DataStore
 
@@ -101,9 +102,10 @@ def report(run, store):
         print_ledger(result)
 
     v = run.verdict
-    print(f"\nVERDICT: {v.verdict}\n  {v.reason}")
+    print(f"\nVERDICT: {v.verdict} ({v.headline or v.reason})")
     for c in v.checks:
-        print(f"  [{c.status:^7}] {c.name}: {c.detail}")
+        name = c.name if c.status == "pass" else PROBLEM_HEADLINES.get(c.name, c.name)
+        print(f"  [{c.status:^7}] {name}: {c.detail}")
     print("  Before using this cohort, a person should:")
     for r in v.human_review:
         print(f"   - {r}")

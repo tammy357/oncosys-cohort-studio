@@ -40,6 +40,7 @@ class Verdict:
     human_review: list
     decision_rule: str = DECISION_RULE
     limitations: list = field(default_factory=list)
+    headline: str = ""          # the deciding problem in plain words, e.g. "The cohort's mix shifted"
 
     def to_dict(self):
         d = asdict(self)
@@ -293,6 +294,23 @@ def evaluate(result, store):
     return _decide(checks, result, store)
 
 
+# What a failing check means, in plain words. The check names describe the passing state, so they read wrongly
+# as the explanation of a problem ("The cohort still looks like the population..." when it doesn't).
+PROBLEM_HEADLINES = {
+    "Every step runs on this release": "A step can't run on this release",
+    "The whole request was turned into steps": "Part of the request wasn't used",
+    "Files match the event's frozen checksums": "A data file doesn't match the frozen release",
+    "No sample is counted twice": "Some samples are counted twice",
+    "One sample per patient": "Some patients contribute more than one sample",
+    "Sample collection days make sense": "The sample collection days look unreliable",
+    "Enough patients to work with": "Too few patients",
+    "The cohort still looks like the population it started from": "The cohort's mix shifted",
+    "Filter fields are recorded for most samples": "A filter field is missing for many samples",
+    "Slides are of one kind": "Diagnostic and frozen slides are mixed",
+    "Survival endpoint suits BRCA": "The survival endpoint needs care for BRCA",
+}
+
+
 def _decide(checks, result, store):
     statuses = [c.status for c in checks]
     if "fail" in statuses:
@@ -305,11 +323,12 @@ def _decide(checks, result, store):
         verdict = "Ready"
     deciding = next((c for c in checks if c.status == {"Blocked": "fail", "Insufficient Evidence": "unknown",
                                                          "Conditional": "warn"}.get(verdict)), None)
-    reason = f"{deciding.name}: {deciding.detail}" if deciding else "Every check passed."
+    headline = PROBLEM_HEADLINES.get(deciding.name, deciding.name) if deciding else "Every check passed"
+    reason = f"{headline}. {deciding.detail}" if deciding else "Every check passed."
     review = ["Read each step and confirm it matches the cohort you meant."]
     review += [c.review for c in checks if c.status != "pass" and c.review]
     limitations = limitations_for(result, store)
-    return Verdict(verdict, reason, checks, review, limitations=limitations)
+    return Verdict(verdict, reason, checks, review, limitations=limitations, headline=headline)
 
 
 def limitations_for(result, store):
