@@ -5,11 +5,19 @@ They are not validated cut-offs, and the app says so.
 """
 from dataclasses import asdict, dataclass, field
 
-from .spec import describe_step
+from .spec import condition_sources, condition_tests, describe_step
 
 MIN_PATIENTS = 20          # fewer patients than this: Blocked
 SHIFT_WARN = 0.10          # total variation distance at or above this: Conditional
 MISSING_WARN = 0.20        # a filter field missing for at least this share of samples: Conditional
+SOURCE_FILES = {"slides": "slide_manifest.csv", "clinical": "clinical.tsv", "survival": "survival.tsv",
+                "normals": "sample_manifest.csv", "manifest": "sample_manifest.csv",
+                "mutation": "mutation_gene_level.tsv.gz"}
+
+
+def _condition_tests(steps):
+    """Every test inside the 'where' steps (AND / OR / NOT conditions)."""
+    return [t for s in steps if s.get("op") == "where" for t in condition_tests(s.get("condition") or {})]
 
 DECISION_RULE = ("Blocked if any check fails. Insufficient Evidence if a fact the cohort depends on can't be "
                  "confirmed. Conditional if any check raises a warning. Ready only when every check passes.")
@@ -80,10 +88,11 @@ def evaluate(result, store):
     used = {"sample_manifest.csv"}
     for s in steps:
         if s.get("op") == "join":
-            used.add({"slides": "slide_manifest.csv", "clinical": "clinical.tsv", "survival": "survival.tsv",
-                      "normals": "sample_manifest.csv"}[s["table"]])
+            used.add(SOURCE_FILES[s["table"]])
         if s.get("op") == "mutation":
-            used.add("mutation_gene_level.tsv.gz")
+            used.add(SOURCE_FILES["mutation"])
+        if s.get("op") == "where":
+            used |= {SOURCE_FILES[n] for n in condition_sources(s.get("condition") or {})}
     bad = [f for f in used if store.file_status.get(f, {}).get("verified") is False]
     if bad:
         checks.append(Check("Files match the event's frozen checksums", "unknown",
@@ -200,11 +209,13 @@ def evaluate(result, store):
                             f"No step moved {', '.join(comp_cols)} by {SHIFT_WARN} or more.", fields=comp_cols))
 
     # 8. Filters on fields that are often missing
-    gaps = [s for s in result.steps if s.op == "filter" and s.missing_fraction >= MISSING_WARN]
+    gaps = [s for s in result.steps if s.op in ("filter", "where") and s.missing_fraction >= MISSING_WARN]
     if gaps:
         checks.append(Check("Filter fields are recorded for most samples", "warn",
-                            "; ".join(f"step {s.index + 1}: {s.missing_fraction:.0%} of samples have no recorded value "
-                                      f"for {s.column}, so they were dropped" for s in gaps) + ".",
+                            "; ".join(f"step {s.index + 1}: {s.missing_fraction:.0%} of samples " +
+                                      ("couldn't be checked against the condition (a value it needs isn't recorded: "
+                                       f"{s.column})" if s.op == "where" else f"have no recorded value for {s.column}")
+                                      + ", so they were dropped" for s in gaps) + ".",
                             "Missing values may not be random. Report how many were dropped and why."))
     else:
         checks.append(Check("Filter fields are recorded for most samples", "pass",
@@ -217,7 +228,8 @@ def evaluate(result, store):
         checks.append(Check("Slides are of one kind", "warn",
                             "The slide join mixes diagnostic (FFPE) and frozen-section slides, which look different.",
                             "Choose diagnostic or frozen slides unless you need both."))
-    os_used = [s for s in steps if s.get("op") == "filter" and s["table"] == "survival" and s["field"] == "os"]
+    os_used = [s for s in steps if s.get("op") == "filter" and s["table"] == "survival" and s["field"] == "os"] \
+        + [t for t in _condition_tests(steps) if t.get("table") == "survival" and t.get("field") == "os"]
     if os_used:
         checks.append(Check("Survival endpoint suits breast cancer", "warn",
                             "The TCGA Clinical Data Resource (Liu et al., Cell 2018) advises caution with overall "
@@ -252,7 +264,8 @@ def limitations_for(result, store):
            "Composition shift thresholds (0.10) are conventions, not validated cut-offs. A shift shows who a step "
            "removed; it can't say why those samples lack data.",
            "This is a research tool. It makes no diagnosis, treatment recommendation or clinical claim."]
-    fields = {s.get("field") for s in steps if s.get("op") == "filter"}
+    fields = {s.get("field") for s in steps if s.get("op") == "filter"} \
+        | {t.get("field") for t in _condition_tests(steps) if "table" in t}
     if fields & {"er_status", "pr_status", "her2_status"}:
         out.append("ER, PR and HER2 status are clinical IHC results recorded by many hospitals with different "
                    "protocols. They disagree with RNA- or protein-based calls for some tumors.")
@@ -272,7 +285,7 @@ def limitations_for(result, store):
     if any(s.get("op") == "one_per_patient" for s in steps):
         out.append("Choosing one sample per patient follows the stated rule, not a judgment about which sample is best "
                    "for your question. sample_selection.csv lists every choice so a person can check it.")
-    if any(s.get("op") == "mutation" for s in steps):
+    if any(s.get("op") == "mutation" for s in steps) or any("gene" in t for t in _condition_tests(steps)):
         out.append("Mutation status uses MC3 gene-level calls: samples without mutation data are removed, not "
                    "treated as wild-type.")
     if not store.available("clinical"):

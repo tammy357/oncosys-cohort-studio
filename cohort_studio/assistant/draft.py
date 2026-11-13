@@ -8,10 +8,11 @@
    flagged, so the verdict asks a person to confirm it.
 """
 import copy
+import json
 import re
 
 from .. import engine
-from ..spec import describe_step, new_spec
+from ..spec import condition_tests, describe_step, new_spec
 from .catalog import Catalog
 from .prompt import build_system, build_user
 from .verify import Checker, _as_list, canonicalize, merge
@@ -35,7 +36,24 @@ CLINICAL_OUTCOME_NAMED = re.compile(r"vital status|tumou?r status|with tumou?r|t
 
 def _gene_named(low, gene):
     names = (gene.lower(),) + GENE_WORDS.get(gene, ())
-    return any(re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", low) for n in names)
+    # 'tp-53', 'pik3-ca': a hyphen inside the symbol still names the gene (joined one way at a time, so a
+    # describing word after it, as in 'tp-53-mutant', isn't glued on)
+    letter_digit = re.sub(r"(?<=[a-z])[-_](?=\d)", "", low)
+    digit_letter = re.sub(r"(?<=\d)[-_](?=[a-z])", "", low)
+    return any(re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", text)
+               for n in names for text in (low, letter_digit, digit_letter))
+
+
+def _without_genes(node, genes):
+    """The condition with the given gene tests removed (None if nothing is left)."""
+    for key in ("all", "any"):
+        if key in node:
+            kids = [k for k in (_without_genes(x, genes) for x in node[key]) if k is not None]
+            return None if not kids else kids[0] if len(kids) == 1 else {key: kids}
+    if "not" in node:
+        kid = _without_genes(node["not"], genes)
+        return None if kid is None else {"not": kid}
+    return None if node.get("gene") in genes else node
 
 
 def _sanity_questions(request, base):
@@ -50,6 +68,17 @@ def _sanity_questions(request, base):
                           "source": "check", "options": options, "dropped_options": []})
 
     for s in base:
+        invented = sorted({t["gene"] for t in condition_tests(s.get("condition") or {}) if "gene" in t
+                           and not _gene_named(low, t["gene"])}) if s["op"] == "where" else []
+        if invented:
+            names = ", ".join(invented)
+            reduced = _without_genes(s["condition"], set(invented))
+            ask("", f"You didn't name {names}, but the draft's condition uses it. What did you mean?",
+                "A gene in an AND or OR changes who is in the cohort.",
+                [{"label": f"The condition without {names}" if reduced else f"Drop the condition (it only tests {names})",
+                  "steps": [{**s, "condition": reduced}] if reduced else []},
+                 {"label": f"Keep {names} in the condition", "steps": [s]}])
+            continue
         if s["op"] == "mutation" and not _gene_named(low, s["gene"]):
             word = "mutated" if s.get("mutated", True) else "not mutated"
             ask("", f"You didn't name a gene, but the draft requires {s['gene']} {word}. What did you mean?",
@@ -248,6 +277,11 @@ def _coverage(draft):
     if any(s["op"] == "one_per_patient" for s in steps):
         handled |= {"per", "each"}
     if any(s["op"] == "exclude_layer" or s.get("cmp") == "not_in" or s.get("mutated") is False for s in steps):
+        handled |= NEGATIONS
+    trees = json.dumps([s.get("condition") for s in steps if s["op"] == "where"])
+    if '"any"' in trees:
+        handled |= {"or", "either", "nor"}
+    if '"not"' in trees or '"mutated": false' in trees or '"not_in"' in trees:
         handled |= NEGATIONS
     uncovered = []
     for m in RISK_RE.finditer(low):

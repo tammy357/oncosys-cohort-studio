@@ -15,7 +15,7 @@ const LEGEND_PALETTE = {
 };
 const OPS = { sample_type: ['Sample', 'op-sample'], layer: ['Layer', 'op-layer'], exclude_layer: ['Exclude', 'op-exclude'],
   join: ['Join', 'op-join'], filter: ['Filter', 'op-filter'], any_of: ['Any of', 'op-filter'], mutation: ['Gene', 'op-mutation'],
-  one_per_patient: ['Per patient', 'op-patient'], dedupe: ['Dedupe', 'op-sample'] };
+  one_per_patient: ['Per patient', 'op-patient'], dedupe: ['Dedupe', 'op-sample'], where: ['Condition', 'op-filter'] };
 const PAM_LABEL = { LumA: 'Luminal A', LumB: 'Luminal B', Her2: 'HER2-enriched', Basal: 'Basal-like', Normal: 'Normal-like' };
 const LAYER_LABEL = { clinical: 'Clinical record', survival: 'Curated survival', mutation: 'Mutation calls (MC3)', copy_number: 'Copy number',
   rna: 'RNA expression', protein: 'Protein (RPPA)' };

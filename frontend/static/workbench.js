@@ -15,7 +15,7 @@ const SLIDE_KINDS = [['diagnostic (FFPE)', 'Diagnostic (FFPE)'], ['frozen, top s
   ['frozen, bottom section', 'Frozen · bottom']];
 const OPS = { sample_type: ['Sample', 'op-sample'], layer: ['Has data', 'op-layer'], exclude_layer: ['No data', 'op-exclude'],
   join: ['Join', 'op-join'], filter: ['Filter', 'op-filter'], any_of: ['Either / or', 'op-filter'], mutation: ['Gene', 'op-mutation'],
-  one_per_patient: ['Per patient', 'op-patient'], dedupe: ['Dedupe', 'op-sample'] };
+  one_per_patient: ['Per patient', 'op-patient'], dedupe: ['Dedupe', 'op-sample'], where: ['Condition', 'op-filter'] };
 const ADD = [
   ['layers', 'Require a data layer', 'Keep samples that have RNA, protein, mutation calls…', () => ({ op: 'layer', layer: 'rna' })],
   ['ban', 'Exclude a data layer', 'Keep samples that do not have a layer', () => ({ op: 'exclude_layer', layer: 'protein' })],
@@ -26,6 +26,7 @@ const ADD = [
   ['dna', 'Gene mutation', 'Somatic MC3 call: mutated or not', () => ({ op: 'mutation', gene: 'TP53', mutated: true })],
   ['image', 'Pathology slide', 'Join diagnostic or frozen-section slides', () => ({ op: 'join', table: 'slides', key: 'sample_id', mode: 'rows', slide_kinds: ['diagnostic (FFPE)'] })],
   ['copy-plus', 'Matched normal tissue', 'The patient also has a normal-tissue sample', () => ({ op: 'join', table: 'normals', key: 'patient_id', mode: 'rows', add_to_cohort: false })],
+  ['git-branch', 'Combined condition', 'OR across tables, NOT of a group, conditions on both samples of a pair', () => ({ op: 'where', condition: { any: [{ layer: 'rna' }, { layer: 'protein' }] } })],
   ['user-round', 'One sample per patient', 'By sample type, or the earliest / latest collected', () => ({ op: 'one_per_patient', rule: 'priority' })],
 ];
 const SUGGESTIONS = ['Remove the slide requirement', 'Make it ER-negative instead', 'Add TP53 mutated', 'Only stage II and III',
@@ -48,6 +49,7 @@ const sigOf = s => {
   if (s.op === 'mutation') return `mutation|${String(s.gene || '').toUpperCase()}`;
   if (s.op === 'join') return `join|${s.table}`;
   if (s.op === 'any_of') return `any|${s.table}|${(s.conditions || []).map(c => c.field).sort().join(',')}`;
+  if (s.op === 'where') return `where|${JSON.stringify(s.condition)}|${s.apply_to || 'sample'}`;
   return s.op;
 };
 
@@ -75,6 +77,7 @@ function describe(s) {
       return `One sample per patient (${first === 'Primary Tumor' ? 'primary tumour' : first === 'Metastatic' ? 'metastasis' : 'normal tissue'} first)`;
     }
     case 'dedupe': return 'Keep one row per sample';
+    case 'where': return 'Keep samples meeting a combined condition (AND / OR / NOT)';
     case 'join':
       if (s.table === 'slides') return `Has a ${(s.slide_kinds || []).length ? s.slide_kinds.join(' / ') : 'pathology'} slide · ${s.mode === 'exists' ? 'once per sample' : 'one row per slide'}`;
       if (s.table === 'normals') return `${s.add_to_cohort ? 'Tumour–normal pairs' : 'Patient also has a normal sample'}${(s.require_layers || []).length ? ` (normal has ${s.require_layers.map(l => LAYERS[l]).join(', ')})` : ''}`;
@@ -259,6 +262,21 @@ function controls(st) {
       };
       draw();
       return h('div', {}, row('Choose', seg(rules, () => st.rule, v => { st.rule = v; draw(); })), detail);
+    }
+    case 'where': {
+      // the condition tree, edited as JSON; the card's title shows it in plain words once it's valid
+      const ta = h('textarea', { class: 'wb-jsonarea', rows: 7, spellcheck: 'false', 'aria-label': 'Condition as JSON' });
+      ta.value = JSON.stringify(st.condition, null, 1);
+      const err = h('span', { class: 'muted' });
+      ta.addEventListener('input', () => {
+        try { st.condition = JSON.parse(ta.value); err.textContent = ''; changed(); } catch { err.textContent = 'Not valid JSON yet'; }
+      });
+      const pairs = wb.steps.some(s => s.op === 'join' && s.table === 'normals' && s.add_to_cohort && !s._off);
+      return h('div', {},
+        h('p', { class: 'wb-hint' }, ...rich('Groups: {"all": [...]} = AND, {"any": [...]} = OR, {"not": ...} = NOT. Tests: a layer, a sample type, a gene, slide kinds, or a clinical / survival field. A value that is not recorded never passes.')),
+        ta, err,
+        pairs || st.apply_to ? row('Check it on', seg([['sample', 'Each sample'], ['both', 'Both samples of a pair'], ['added_normals', 'The added normal']],
+          () => st.apply_to || 'sample', v => { if (v === 'sample') delete st.apply_to; else st.apply_to = v; })) : null);
     }
     default:
       return h('p', { class: 'muted' }, 'Nothing to set for this step.');

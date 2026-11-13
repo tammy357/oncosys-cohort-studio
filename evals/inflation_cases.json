@@ -1,0 +1,560 @@
+{
+ "about": "Join-inflation suite: requests where a join can count samples more than once (several slides per sample, clinical or survival records joined by patient barcode, slides after a matched-normal condition) plus controls that must NOT be flagged. Written from a scan of the frozen release, not from the parser or the AI. Each case has the gold steps an analyst would write (joins in 'rows' mode, as in the brief's demo). 'expect' records what the engine must show: which step inflates, rows before the fix and the sample count after the fix (frozen by evals/run_inflation.py --freeze). Run: python evals/run_inflation.py [--parser rules ai].",
+ "cases": [
+  {
+   "id": "inf_dx_demo",
+   "kind": "slides",
+   "request": "primary tumors with both RNA and protein data and a diagnostic slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "layer",
+     "layer": "rna"
+    },
+    {
+     "op": "layer",
+     "layer": "protein"
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "diagnostic (FFPE)"
+     ]
+    }
+   ],
+   "why": "The brief's live demo.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 4,
+      "op": "join",
+      "rows": 776,
+      "samples": 731
+     }
+    ],
+    "samples_after_fix": 731
+   }
+  },
+  {
+   "id": "inf_frozen_top",
+   "kind": "slides",
+   "request": "primary tumours that have a frozen top-section slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "frozen, top section"
+     ]
+    }
+   ],
+   "why": "Frozen top sections are the most duplicated slide kind (up to 6 per sample).",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 1045,
+      "samples": 1044
+     }
+    ],
+    "samples_after_fix": 1044
+   }
+  },
+  {
+   "id": "inf_frozen_bottom_rna",
+   "kind": "slides",
+   "request": "tumor samples with RNA-seq and a frozen bottom-section slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "layer",
+     "layer": "rna"
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "frozen, bottom section"
+     ]
+    }
+   ],
+   "why": "Bottom sections: fewer samples, still several slides for some.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 3,
+      "op": "join",
+      "rows": 472,
+      "samples": 427
+     }
+    ],
+    "samples_after_fix": 427
+   }
+  },
+  {
+   "id": "inf_any_slide",
+   "kind": "slides",
+   "request": "every primary tumour with at least one whole-slide image of any kind",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": []
+    }
+   ],
+   "why": "Any slide kind: most samples have both a frozen and a diagnostic slide, so rows roughly double.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 2704,
+      "samples": 1098
+     }
+    ],
+    "samples_after_fix": 1098
+   }
+  },
+  {
+   "id": "inf_luma_dx_protein",
+   "kind": "slides",
+   "request": "luminal A tumours with RPPA data and an FFPE diagnostic slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "layer",
+     "layer": "protein"
+    },
+    {
+     "op": "join",
+     "table": "clinical",
+     "key": "sample_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "clinical",
+     "field": "pam50",
+     "cmp": "in",
+     "value": [
+      "LumA"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "diagnostic (FFPE)"
+     ]
+    }
+   ],
+   "why": "Inflation after a clinical filter: the double count hides behind a subtype.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 5,
+      "op": "join",
+      "rows": 339,
+      "samples": 324
+     }
+    ],
+    "samples_after_fix": 324
+   }
+  },
+  {
+   "id": "inf_her2_dx",
+   "kind": "slides",
+   "request": "HER2-positive tumors with diagnostic whole-slide images",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "clinical",
+     "key": "sample_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "clinical",
+     "field": "her2_status",
+     "cmp": "in",
+     "value": [
+      "Positive"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "diagnostic (FFPE)"
+     ]
+    }
+   ],
+   "why": "Receptor filter, then the diagnostic slide join.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 4,
+      "op": "join",
+      "rows": 167,
+      "samples": 160
+     }
+    ],
+    "samples_after_fix": 160
+   }
+  },
+  {
+   "id": "inf_normals_frozen",
+   "kind": "slides",
+   "request": "solid tissue normal samples that have any frozen-section slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Solid Tissue Normal"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "frozen, top section",
+      "frozen, middle section",
+      "frozen, bottom section"
+     ]
+    }
+   ],
+   "why": "Normal tissue has frozen slides too, several per sample for some.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 349,
+      "samples": 138
+     }
+    ],
+    "samples_after_fix": 138
+   }
+  },
+  {
+   "id": "inf_clin_by_patient_er_neg",
+   "kind": "clinical-by-patient",
+   "request": "ER-negative tumours, with clinical data matched on the patient barcode",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "clinical",
+     "key": "patient_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "clinical",
+     "field": "er_status",
+     "cmp": "in",
+     "value": [
+      "Negative"
+     ]
+    }
+   ],
+   "why": "Patients with a normal sample have two clinical rows, so their tumour matches twice.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 1247,
+      "samples": 1101
+     }
+    ],
+    "samples_after_fix": 238
+   }
+  },
+  {
+   "id": "inf_clin_by_patient_all_types",
+   "kind": "clinical-by-patient",
+   "request": "all samples of any type from patients older than 70, clinical records linked by patient",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor",
+      "Solid Tissue Normal",
+      "Metastatic"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "clinical",
+     "key": "patient_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "clinical",
+     "field": "age",
+     "cmp": "gte",
+     "value": 71
+    }
+   ],
+   "why": "Every sample of a multi-sample patient matches every clinical row of that patient (2x2, 3x3).",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 1547,
+      "samples": 1247
+     }
+    ],
+    "samples_after_fix": 237
+   }
+  },
+  {
+   "id": "inf_surv_by_patient_died",
+   "kind": "survival-by-patient",
+   "request": "primary tumours from patients who died, joining survival by patient ID",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "survival",
+     "key": "patient_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "survival",
+     "field": "os",
+     "cmp": "is_event",
+     "value": null
+    }
+   ],
+   "why": "Survival rows exist per sample; by patient, a tumour matches its normal's survival row too.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 1236,
+      "samples": 1097
+     },
+     {
+      "step": 3,
+      "op": "filter",
+      "rows": 202,
+      "samples": 151
+     }
+    ],
+    "samples_after_fix": 151
+   }
+  },
+  {
+   "id": "inf_surv_by_patient_dx",
+   "kind": "survival-by-patient+slides",
+   "request": "tumours with overall survival recorded (survival linked by patient) and a diagnostic slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "survival",
+     "key": "patient_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "survival",
+     "field": "os",
+     "cmp": "notnull",
+     "value": null
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "diagnostic (FFPE)"
+     ]
+    }
+   ],
+   "why": "Two inflating joins in one request: both must be found and fixed.",
+   "expect": {
+    "inflated_steps": [
+     {
+      "step": 2,
+      "op": "join",
+      "rows": 1236,
+      "samples": 1097
+     },
+     {
+      "step": 4,
+      "op": "join",
+      "rows": 1276,
+      "samples": 1061
+     }
+    ],
+    "samples_after_fix": 1061
+   }
+  },
+  {
+   "id": "ctl_matched_normal_frozen_top",
+   "kind": "control",
+   "request": "primary tumours from patients who also gave normal tissue, with a frozen top-section slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "normals",
+     "key": "patient_id",
+     "mode": "rows",
+     "add_to_cohort": false
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "frozen, top section"
+     ]
+    }
+   ],
+   "why": "Control: none of these tumours has two top-section slides, so nothing may be flagged.",
+   "expect": {
+    "inflated_steps": [],
+    "samples_after_fix": 134
+   }
+  },
+  {
+   "id": "ctl_frozen_middle",
+   "kind": "control",
+   "request": "primary tumours with a frozen middle-section slide",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "slides",
+     "key": "sample_id",
+     "mode": "rows",
+     "slide_kinds": [
+      "frozen, middle section"
+     ]
+    }
+   ],
+   "why": "Control: every sample has at most one middle-section slide, so nothing may be flagged.",
+   "expect": {
+    "inflated_steps": [],
+    "samples_after_fix": 55
+   }
+  },
+  {
+   "id": "ctl_clin_by_sample",
+   "kind": "control",
+   "request": "ER-negative tumours with clinical data matched on the sample barcode",
+   "gold_steps": [
+    {
+     "op": "sample_type",
+     "values": [
+      "Primary Tumor"
+     ]
+    },
+    {
+     "op": "join",
+     "table": "clinical",
+     "key": "sample_id",
+     "mode": "rows"
+    },
+    {
+     "op": "filter",
+     "table": "clinical",
+     "field": "er_status",
+     "cmp": "in",
+     "value": [
+      "Negative"
+     ]
+    }
+   ],
+   "why": "Control: one clinical row per sample, nothing to fix.",
+   "expect": {
+    "inflated_steps": [],
+    "samples_after_fix": 238
+   }
+  }
+ ]
+}

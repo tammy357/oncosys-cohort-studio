@@ -49,10 +49,13 @@ FIELD_ALIASES = {"er": "er_status", "estrogen_receptor": "er_status", "estrogen_
 GENE_ALIASES = {"HER2": "ERBB2", "HER-2": "ERBB2", "ER": "ESR1"}
 ROMAN = {"1": "I", "2": "II", "3": "III", "4": "IV"}
 
+GROUP_ALIASES = {"all": "all", "and": "all", "any": "any", "or": "any", "not": "not"}
+TEST_KEYS = {"layer": {"layer"}, "sample_type": {"sample_type"}, "gene": {"gene", "mutated"},
+             "slide_kinds": {"slide_kinds"}, "slides": {"slides"}, "field": {"table", "field", "cmp", "value", "column"}}
 RULE_ALIASES = {"priority": "priority", "sample_type": "priority", "type": "priority", "earliest": "earliest",
                 "first": "earliest", "initial": "earliest", "latest": "latest", "last": "latest", "most recent": "latest",
                 "newest": "latest"}
-RANK = {"sample_type": 0, "layer": 1, "exclude_layer": 1, "mutation": 2, "one_per_patient": 9, "dedupe": 10}
+RANK = {"where": 8.5, "sample_type": 0, "layer": 1, "exclude_layer": 1, "mutation": 2, "one_per_patient": 9, "dedupe": 10}
 TABLE_RANK = {("join", "clinical"): 3, ("filter", "clinical"): 4, ("any_of", "clinical"): 4,
               ("join", "survival"): 5, ("filter", "survival"): 6, ("any_of", "survival"): 6,
               ("join", "normals"): 7, ("join", "slides"): 8}
@@ -130,6 +133,8 @@ class Checker:
             return self._mutation(step)
         if op == "join":
             return self._join(step)
+        if op == "filter" and str(step.get("table", "")).strip().lower() in ("mutation", "mutations", "mc3"):
+            return self._mutation_from_filter(step)
         if op == "filter":
             table, cond = self._condition(step.get("table"), step)
             if cond is None:
@@ -137,6 +142,8 @@ class Checker:
             return {"op": "filter", "table": table, **cond}
         if op == "any_of":
             return self._any_of(step)
+        if op == "where":
+            return self._where(step)
         if op == "one_per_patient":
             return self._per_patient(step)
         if op == "dedupe":
@@ -168,6 +175,100 @@ class Checker:
             out["order"] = order
         return out
 
+    def _mutation_from_filter(self, step):
+        """A gene written as a filter on the mutation table: the mutation step it means."""
+        gene = step.get("gene") or step.get("field")
+        cmp = str(step.get("cmp", "in")).strip().lower()
+        cmp = CMP_ALIASES.get(cmp, cmp)
+        values = {str(v).strip().lower() for v in _as_list(step.get("value")) if v is not None}
+        mutant = {"mutated", "mutant", "mutation", "mut", "yes", "true", "1", "present"}
+        wild = {"wild-type", "wildtype", "wild type", "wt", "not mutated", "no", "false", "0", "absent"}
+        if cmp not in ("in", "not_in", "in_raw") or not values or not (values <= mutant or values <= wild):
+            raise _Unsupported(str(gene), f"'{gene}' was written as a filter without saying mutated or wild-type; "
+                                          "write it as a mutation step with mutated true or false.")
+        mutated = values <= mutant
+        if cmp == "not_in":
+            mutated = not mutated
+        self._fix(f"filter on {gene}", "mutation step", "a gene is read from the mutation calls, not filtered as a column")
+        return self._mutation({"gene": gene, "mutated": mutated})
+
+    def _where(self, step):
+        """A condition tree (AND / OR / NOT across tables, layers, genes, slides), every test checked like a step.
+        Inside a tree nothing becomes a question: a value that can't be matched exactly is reported instead."""
+        asked, self.allow_questions = self.allow_questions, False
+        try:
+            cond = self._node(step.get("condition"), 0)
+        finally:
+            self.allow_questions = asked
+        out = {"op": "where", "condition": cond}
+        apply_to = str(step.get("apply_to") or "sample").strip().lower()
+        apply_to = {"normal": "added_normals", "normals": "added_normals", "pair": "both", "pairs": "both",
+                    "tumour_and_normal": "both", "tumor_and_normal": "both"}.get(apply_to, apply_to)
+        if apply_to not in ("sample", "added_normals", "both"):
+            raise _Unsupported(apply_to, "apply_to must be sample, added_normals or both.")
+        if apply_to != "sample":
+            out["apply_to"] = apply_to
+        return out
+
+    def _node(self, node, depth):
+        if depth > 8:
+            raise _Unsupported("condition", "The condition is nested too deeply to check.")
+        if isinstance(node, list):
+            node = {"all": node}
+        if not isinstance(node, dict) or not node:
+            raise _Unsupported(str(node)[:40], "A condition must be a test or an all / any / not group.")
+        groups = [k for k in node if str(k).lower() in GROUP_ALIASES]
+        if groups:
+            if len(node) != 1:
+                raise _Unsupported(str(sorted(node))[:40], "A group must be exactly one of all / any / not, with nothing "
+                                                            "beside it.")
+            key, value = GROUP_ALIASES[str(groups[0]).lower()], node[groups[0]]
+            if key == "not":
+                if isinstance(value, list):
+                    if len(value) != 1:
+                        raise _Unsupported("not", "'not' takes one condition: write not {any: [...]} for 'neither' or "
+                                                  "not {all: [...]} for 'not both'.")
+                    value = value[0]
+                return {"not": self._node(value, depth + 1)}
+            kids = [self._node(x, depth + 1) for x in _as_list(value)]
+            if not kids:
+                raise _Unsupported(str(groups[0]), "An empty group in the condition.")
+            return kids[0] if len(kids) == 1 else {key: kids}
+        kinds = [k for k in TEST_KEYS if k in node]
+        if len(kinds) != 1:
+            raise _Unsupported(str(sorted(node))[:40], "A condition test must be exactly one of a layer, a sample type, "
+                                                        "a gene, slide kinds or a field.")
+        stray = set(node) - TEST_KEYS[kinds[0]]
+        if stray:
+            raise _Unsupported(", ".join(sorted(map(str, stray))), f"Unknown key(s) {sorted(map(str, stray))} in a "
+                                                                    "condition test.")
+        test = self._test(node)
+        if test is None:          # dropping one test would change what the whole condition means
+            raise _Unsupported(str(node.get("field") or node.get("gene") or node)[:40],
+                               "Part of the condition can't be matched exactly to this release, so the condition wasn't used.")
+        return test
+
+    def _test(self, node):
+        if "layer" in node:
+            return {"layer": self._layer(node["layer"])}
+        if "sample_type" in node:
+            step = self.check_step({"op": "sample_type", "values": node["sample_type"]})
+            return {"sample_type": step["values"]} if step else None
+        if "gene" in node:
+            step = self._mutation({"gene": node["gene"], "mutated": node.get("mutated", True)})
+            return {"gene": step["gene"], "mutated": step["mutated"]} if step else None
+        if "slide_kinds" in node or "slides" in node:
+            kinds = node.get("slide_kinds", node.get("slides"))
+            step = self._join({"op": "join", "table": "slides", "slide_kinds": kinds})
+            return {"slide_kinds": step["slide_kinds"]}
+        if "field" in node:
+            if str(node.get("table", "")).strip().lower() in ("mutation", "mutations", "mc3"):
+                step = self._mutation_from_filter(node)
+                return {"gene": step["gene"], "mutated": step["mutated"]} if step else None
+            table, cond = self._condition(node.get("table") or "clinical", node, in_any_of=True)
+            return None if cond is None else {"table": table, **cond}
+        raise _Unsupported(str(node)[:40], "Unknown condition test.")
+
     def _layer(self, layer):
         canon = LAYER_ALIASES.get(str(layer).strip().lower())
         if canon is None:
@@ -182,6 +283,13 @@ class Checker:
         mutated = step.get("mutated", True)
         if isinstance(mutated, str):
             mutated = mutated.strip().lower() not in ("false", "no", "not mutated", "wild-type", "wildtype", "0")
+        if self.cat.genes and gene not in self.cat.genes:
+            symbol, stated = self.cat.read_gene(raw)            # 'tp-53', 'CDH1-mutant', 'TP53_WT'
+            if symbol:
+                gene = symbol
+                if stated is not None and stated != bool(mutated):
+                    self._fix(raw, f"{symbol} {'mutated' if stated else 'not mutated'}", "the gene name says which call")
+                    mutated = stated
         if not self.cat.genes:
             return {"op": "mutation", "gene": gene, "mutated": bool(mutated)}
         if gene in self.cat.genes:
@@ -228,6 +336,12 @@ class Checker:
         return out
 
     def _any_of(self, step):
+        raw = [c for c in _as_list(step.get("conditions")) if isinstance(c, dict)]
+        named = {TABLE_ALIASES.get(str(c.get("table") or step.get("table") or "clinical").strip().lower(), "clinical")
+                 for c in raw}
+        if len(named) > 1:        # an OR across tables: the general condition step expresses it
+            return self._where({"op": "where", "condition": {"any": [{**c, "table": c.get("table") or step.get("table")}
+                                                                     for c in raw]}})
         conds, table = [], None
         for c in _as_list(step.get("conditions")):
             if not isinstance(c, dict):
@@ -235,8 +349,9 @@ class Checker:
             t, fixed = self._condition(c.get("table") or step.get("table"), c, in_any_of=True)
             if fixed is None:
                 continue
-            if table and t != table:
-                raise _Unsupported("or", "An 'or' across the clinical and survival tables can't be expressed.")
+            if table and t != table:          # a field that lives in the other table: same as above
+                return self._where({"op": "where", "condition": {"any": [{**x, "table": x.get("table") or step.get("table")}
+                                                                         for x in raw]}})
             table = t
             conds.append(fixed)
         if not conds:
@@ -249,6 +364,9 @@ class Checker:
     # ---------- one condition: field, comparison, values ----------
     def _condition(self, table, cond, in_any_of=False):
         table = TABLE_ALIASES.get(str(table or "").strip().lower(), "clinical")
+        if table not in ("clinical", "survival"):
+            raise _Unsupported(str(cond.get("field") or table), f"Fields can be tested in the clinical and survival "
+                                                                 f"tables, not '{table}'. Use a join or a slide test.")
         field = str(cond.get("field", "")).strip()
         cmp = str(cond.get("cmp", "in")).strip().lower()
         cmp = CMP_ALIASES.get(cmp, cmp)

@@ -8,7 +8,7 @@ import pandas as pd
 
 from . import ops
 from .engine import PREFIX, extra_cohort_columns
-from .spec import describe_step
+from .spec import condition_sources, describe_step, resolve_condition
 
 
 def ledger_frame(result):
@@ -128,6 +128,12 @@ def reproduce_script(result, store):
                 used[f"{s['table']}.tsv"] = f"raw/{s['table']}.tsv"
         if s["op"] == "mutation":
             used["mutation_gene_level.tsv.gz"] = "raw/mutation_gene_level.tsv.gz"
+        if s["op"] == "where":
+            for name in condition_sources(s["condition"]):
+                rel = {"slides": "slide_manifest.csv", "mutation": "raw/mutation_gene_level.tsv.gz",
+                       "clinical": "raw/clinical.tsv", "survival": "raw/survival.tsv"}.get(name)
+                if rel:
+                    used[rel.split("/")[-1]] = rel
     for name, rel in used.items():
         digest = store.file_status.get(name, {}).get("sha256")
         if digest:
@@ -173,6 +179,11 @@ def reproduce_script(result, store):
             lines.append(f"df = filter_mutation(df, mutation, {s['gene']!r}, {bool(s.get('mutated', True))!r})")
         elif op == "dedupe":
             lines.append("df = one_row_per_sample(df)")
+        elif op == "where":
+            names = sorted(condition_sources(s["condition"]))
+            sources = ", ".join(f"{n!r}: load_{n}(DATA)" for n in names)
+            tree = resolve_condition(s["condition"], store)
+            lines.append(f"df = filter_where(df, {tree!r}, {{{sources}}}, {s.get('apply_to', 'sample')!r})")
         elif op == "one_per_patient":
             rule = s.get("rule", "priority")
             time_col = (f"{PREFIX['clinical']}.{store.resolve_field('clinical', 'collection_day')}"

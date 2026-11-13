@@ -10,7 +10,8 @@ import pandas as pd
 
 from . import ops
 from .data import EXPECTED_LINKS, FIELD_TO_COMPOSITION
-from .spec import JOIN_TABLES, LAYER_LABELS, clone, describe_step, validate
+from .spec import (JOIN_TABLES, LAYER_LABELS, clone, condition_sources, condition_tests, describe_step,
+                   resolve_condition, validate)
 from .stats import permutation_shift_tests
 
 PREFIX = {"slides": "slide", "clinical": "clin", "survival": "surv", "normals": "normal"}
@@ -35,7 +36,7 @@ class StepResult:
     shift: dict = field(default_factory=dict)
     error: str = ""
     skipped: bool = False
-    missing_fraction: float = 0.0   # filter steps: share of incoming samples with no recorded value
+    missing_fraction: float = 0.0   # filter / where steps: share of incoming samples with no recorded value to decide on
     column: str = ""                # filter steps: the real column used
     selection: list = field(default_factory=list)       # one_per_patient: which sample was kept, and why
     removed_reasons: dict = field(default_factory=dict)  # per-sample reasons, where a step has them
@@ -120,6 +121,11 @@ def _skip_columns_for(step):
     if step["op"] == "any_of":
         cols = {FIELD_TO_COMPOSITION.get((step["table"], c.get("field"))) for c in step.get("conditions", [])}
         return {c for c in cols if c}
+    if step["op"] == "where":        # what the condition tests changes on purpose, like a filter
+        tests = condition_tests(step.get("condition") or {})
+        cols = {FIELD_TO_COMPOSITION.get((t.get("table"), t.get("field"))) for t in tests if "table" in t}
+        cols |= {"Sample type"} if any("sample_type" in t for t in tests) else set()
+        return {c for c in cols if c}
     return set()
 
 
@@ -141,6 +147,8 @@ def _removed_reason(step):
         return "met none of the conditions (or the values are not recorded)"
     if op == "one_per_patient":
         return "another sample from the same patient was kept"
+    if op == "where":
+        return "didn't meet the condition (or a value it needs isn't recorded)"
     return "removed by this step"
 
 
@@ -173,7 +181,73 @@ def apply_step(frame, step, store):
         conditions = [(f"{p}.{store.resolve_field(step['table'], c['field'])}", c["cmp"], c.get("value"))
                       for c in step["conditions"]]
         return ops.filter_any(frame, conditions)
+    if op == "where":
+        return ops.filter_where(frame, resolve_condition(step["condition"], store),
+                                condition_tables(step["condition"], store), step.get("apply_to", "sample"))
     raise ValueError(f"Unknown step '{op}'")
+
+
+def _where_unknown(step, store, before):
+    """For the missing-data check: the share of incoming samples the condition couldn't decide (a value it needs isn't
+    recorded), and the fields it tests."""
+    cols = {"sample": ["sample_id"], "added_normals": ["normal.sample_id"],
+            "both": ["sample_id", "normal.sample_id"]}.get(step.get("apply_to", "sample"), ["sample_id"])
+    ids = [i for c in cols if c in before.columns for i in before[c].drop_duplicates()]
+    if not ids:
+        return 0.0, ""
+    truth = ops.evaluate_condition(resolve_condition(step["condition"], store), ids, condition_tables(step["condition"], store))
+    tests = condition_tests(step["condition"])
+    names = [t["field"] for t in tests if "table" in t] + [f"{t['gene']} mutation call" for t in tests if "gene" in t]
+    return float(truth.isna().mean()), ", ".join(dict.fromkeys(names)) or "the condition"
+
+
+def _expected_links(step):
+    """Characteristics a step is expected to move because of what it filters on (filters, any_of and conditions)."""
+    if step["op"] == "filter":
+        tested = [(step.get("table"), step.get("field"))]
+    elif step["op"] == "any_of":
+        tested = [(step.get("table"), c.get("field")) for c in step.get("conditions", [])]
+    elif step["op"] == "where":
+        tested = [(t.get("table"), t.get("field")) for t in condition_tests(step.get("condition") or {}) if "table" in t]
+    else:
+        return {}
+    links = {}
+    for key in tested:
+        links.update(EXPECTED_LINKS.get(key, {}))
+    return links
+
+
+def condition_tables(condition, store):
+    """The loaded tables a 'where' condition reads (see ops.evaluate_condition)."""
+    loaders = {"manifest": lambda: store.manifest, "slides": lambda: store.slides,
+               "mutation": lambda: store.table("mutation"), "clinical": lambda: store.table("clinical"),
+               "survival": lambda: store.table("survival")}
+    return {name: loaders[name]() for name in condition_sources(condition)}
+
+
+def _record_where(r, step, store, before):
+    """Why each sample left a 'where' step: the condition was false, or a value it needs isn't recorded, for the
+    sample itself or (apply_to both / added_normals) for the normal sample its pair added."""
+    if not r.removed:
+        return
+    cond, tables = resolve_condition(step["condition"], store), condition_tables(step["condition"], store)
+    apply_to = step.get("apply_to", "sample")
+    own = dict(zip(r.removed, ops.evaluate_condition(cond, r.removed, tables)))
+    paired = {}
+    if apply_to != "sample" and "normal.sample_id" in before.columns:
+        pairs = before.loc[before["sample_id"].isin(r.removed), ["sample_id", "normal.sample_id"]].drop_duplicates()
+        for sid, t in zip(pairs["sample_id"], ops.evaluate_condition(cond, pairs["normal.sample_id"], tables)):
+            paired[sid] = min(paired.get(sid, 1.0), t) if t == t else float("nan")
+
+    def why(t):
+        return "doesn't meet the condition" if t == 0.0 else "a value the condition needs isn't recorded"
+    for sid in r.removed:
+        normal = paired.get(sid, 1.0)
+        if apply_to != "sample" and normal != 1.0 and (apply_to == "added_normals" or own[sid] == 1.0):
+            r.removed_reasons[sid] = ("its paired normal sample doesn't meet the condition" if normal == 0.0
+                                      else "a value the condition needs isn't recorded for its paired normal sample")
+        else:
+            r.removed_reasons[sid] = why(own[sid])
 
 
 def _duplicate_examples(frame, step, limit=5):
@@ -254,6 +328,9 @@ def run(spec, store):
         r.removed_reason = _removed_reason(step)
         if step["op"] == "one_per_patient":
             _record_selection(r, frame, new)
+        if step["op"] == "where":
+            _record_where(r, step, store, frame)
+            r.missing_fraction, r.column = _where_unknown(step, store, frame)
         ratio_in = r.rows_in / r.samples_in if r.samples_in else 1
         if r.samples_out and r.rows_per_sample > ratio_in + 1e-9:
             r.inflated = True
@@ -263,7 +340,7 @@ def run(spec, store):
             r.duplicate_examples = _duplicate_examples(new, step)
         skip = _skip_columns_for(step)
         filtered_vars |= skip
-        links = EXPECTED_LINKS.get((step.get("table"), step.get("field")), {}) if step["op"] == "filter" else {}
+        links = _expected_links(step)
         all_links.update(links)
         shift = composition_shift(store, before_ids, after_ids, skip)
         if step["op"] == "sample_type":
