@@ -108,6 +108,10 @@ def join_table(df, right, prefix, key, mode):
     mode 'exists' : keep each left row once if it has at least one match (a semi-join),
                     and record how many matches it had.
     """
+    # Joining a table again replaces only the columns this join creates, so names never clash (e.g. clinical
+    # joined by sample, then by patient) and other columns survive (e.g. a pairs join's normal.sample_id).
+    new = {f"{prefix}.{c}" for c in right.columns} if mode == "rows" else {f"{prefix}.n_matches"}
+    df = df.drop(columns=[c for c in df.columns if c in new])
     r = right.copy()
     r.columns = [f"{prefix}.{c}" for c in r.columns]
     rkey = f"{prefix}.{key}"
@@ -239,6 +243,80 @@ def filter_any(df, conditions):
     keep = pd.Series(False, index=df.index)
     for column, cmp, value in conditions:
         keep |= df.index.isin(filter_column(df, column, cmp, value).index)
+    return df[keep].copy()
+
+
+# ---- conditions: AND / OR / NOT across data layers, sample types, genes, slides and clinical/survival fields ----
+def evaluate_condition(node, ids, sources):
+    """How a condition holds for each sample ID: 1.0 true, 0.0 false, NaN unknown.
+
+    Unknown means a value the test needs is not recorded (or the sample has no mutation calls). AND, OR and NOT
+    use three-valued logic, so an unknown can still be decided (false AND unknown = false, true OR unknown = true);
+    NOT unknown stays unknown, and a cohort keeps only samples where the whole condition is true.
+
+    node    : {"all": [...]} | {"any": [...]} | {"not": node} | one test:
+              {"layer": L} | {"sample_type": [...]} | {"gene": G, "mutated": true/false} | {"slide_kinds": [...]}
+              ([] = any slide) | {"table": "clinical"|"survival", "column": <real column>, "cmp": ..., "value": ...}
+    ids     : sample IDs (a list or Series)
+    sources : the loaded tables a test needs: "manifest", "slides", "mutation", "clinical", "survival"
+    Each sample is looked up by its own ID, so a condition never adds rows.
+    """
+    ids = pd.Series(list(ids), dtype=object)
+    group = "all" if "all" in node else "any" if "any" in node else None
+    if group:
+        parts = pd.concat([evaluate_condition(k, ids, sources) for k in node[group]], axis=1)
+        unknown = parts.isna().any(axis=1)
+        out = pd.Series(1.0 if group == "all" else 0.0, index=ids.index)
+        out[unknown] = float("nan")
+        if group == "all":
+            out[parts.eq(0.0).any(axis=1)] = 0.0
+        else:
+            out[parts.eq(1.0).any(axis=1)] = 1.0
+        return out
+    if "not" in node:
+        return 1.0 - evaluate_condition(node["not"], ids, sources)
+    if "layer" in node or "sample_type" in node:
+        manifest = sources["manifest"].drop_duplicates("sample_id").set_index("sample_id")
+        if "layer" in node:
+            return ids.map(manifest[LAYER_COLUMNS[node["layer"]]]).eq(True).astype(float)
+        return ids.map(manifest["sample_type"]).isin(list(node["sample_type"])).astype(float)
+    if "gene" in node:
+        mutation = sources["mutation"]
+        calls = pd.to_numeric(mutation.loc[node["gene"]], errors="coerce") if node["gene"] in mutation.index \
+            else pd.Series(dtype=float)
+        value = ids.map(calls)
+        hit = (value > 0) if node.get("mutated", True) else (value == 0)
+        return hit.astype(float).where(value.notna())
+    if "slide_kinds" in node:
+        with_slide = set(slides_of_kind(sources["slides"], node["slide_kinds"])["sample_id"])
+        return ids.isin(with_slide).astype(float)
+    table = sources[node["table"]].drop_duplicates("sample_id").set_index("sample_id")
+    values = ids.map(table[node["column"]])
+    kept = filter_column(pd.DataFrame({"v": values.values}), "v", node["cmp"], node.get("value")).index
+    if node["cmp"] == "notnull":                # 'is recorded' is itself a question about missing values
+        unknown = pd.Series(False, index=ids.index)
+    elif node["cmp"] == "in_raw":               # exact raw values: only a truly empty value is unknown
+        unknown = values.map(lambda x: x is None or (isinstance(x, float) and pd.isna(x))
+                             or str(x).strip() == "" or str(x).strip().startswith("["))
+    else:
+        unknown = values.map(is_missing)
+    out = pd.Series(0.0, index=ids.index)
+    out[unknown.astype(bool).to_numpy()] = float("nan")
+    out.iloc[list(kept)] = 1.0
+    return out
+
+
+def filter_where(df, node, sources, apply_to="sample"):
+    """Keep rows whose sample meets the condition (true, not unknown).
+
+    apply_to: "sample" (the row's own sample), "added_normals" (the normal sample a tumour-normal pairs join
+    added to the row) or "both" (the row's sample and its paired normal must each meet it).
+    """
+    columns = {"sample": ["sample_id"], "added_normals": ["normal.sample_id"],
+               "both": ["sample_id", "normal.sample_id"]}[apply_to]
+    keep = pd.Series(True, index=df.index)
+    for col in columns:
+        keep &= pd.Series(evaluate_condition(node, df[col], sources).eq(1.0).to_numpy(), index=df.index)
     return df[keep].copy()
 
 

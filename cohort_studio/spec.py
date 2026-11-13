@@ -13,6 +13,11 @@ script all speak the same language. Step types:
   {"op": "dedupe"}                                      # keep one row per sample
   {"op": "one_per_patient", "rule": "priority", "order": ["Primary Tumor", "Metastatic", "Solid Tissue Normal"]}
   {"op": "one_per_patient", "rule": "earliest"}         # or "latest"; needs sample collection days in clinical
+  {"op": "where", "condition": {"any": [{"table": "clinical", "field": "er_status", "cmp": "in", "value": ["Negative"]},
+                                         {"gene": "TP53", "mutated": true}]}}
+      # AND / OR / NOT across layers, sample types, genes, slides and clinical/survival fields; each sample is
+      # looked up by its own ID (no join, no inflation). "apply_to": "both" after a tumour-normal pairs join makes
+      # the condition hold for the tumour and its normal ("added_normals": the normal only).
 
 join modes: "rows" = ordinary join (one row per match, can inflate counts);
             "exists" = keep each sample once if it has at least one match.
@@ -47,6 +52,163 @@ def clone(spec):
 
 def to_json(spec):
     return json.dumps(spec, indent=2)
+
+
+# ---------- condition trees (the "where" step) ----------
+GROUP_KEYS = ("all", "any")
+TEST_KINDS = ("layer", "sample_type", "gene", "slide_kinds", "table")
+MAX_CONDITION_DEPTH = 8
+MAX_CONDITION_TESTS = 40
+
+
+def condition_tests(node):
+    """Every test (leaf) of a condition tree, depth first."""
+    if not isinstance(node, dict):
+        return []
+    for key in GROUP_KEYS:
+        if key in node:
+            return [t for k in node[key] for t in condition_tests(k)]
+    if "not" in node:
+        return condition_tests(node["not"])
+    return [node]
+
+
+def resolve_condition(node, store):
+    """A copy of the tree with each clinical/survival test's real column name added (for the engine and scripts)."""
+    for key in GROUP_KEYS:
+        if key in node:
+            return {key: [resolve_condition(k, store) for k in node[key]]}
+    if "not" in node:
+        return {"not": resolve_condition(node["not"], store)}
+    if "table" in node:
+        return {**node, "column": store.resolve_field(node["table"], node["field"])}
+    return dict(node)
+
+
+def condition_sources(node):
+    """The tables a condition reads: manifest, slides, mutation, clinical, survival."""
+    need = set()
+    for t in condition_tests(node):
+        if "layer" in t or "sample_type" in t:
+            need.add("manifest")
+        elif "gene" in t:
+            need.add("mutation")
+        elif "slide_kinds" in t:
+            need.add("slides")
+        elif "table" in t:
+            need.add(t["table"])
+    return need
+
+
+def _describe_test(t):
+    if "layer" in t:
+        return f"has {LAYER_LABELS.get(t['layer'], t['layer'])} data"
+    if "sample_type" in t:
+        return "is a " + " or ".join(v.lower() for v in t["sample_type"]) + " sample"
+    if "gene" in t:
+        return f"{t['gene']} {'mutated' if t.get('mutated', True) else 'not mutated'}"
+    if "slide_kinds" in t:
+        kinds = t["slide_kinds"] or []
+        what = ("frozen-section" if set(kinds) == set(ops.FROZEN_KINDS) else
+                "pathology" if not kinds or set(kinds) == set(ops.SLIDE_KINDS) else " or ".join(kinds))
+        return f"has a {what} slide"
+    label = TABLE_FIELDS.get(t.get("table"), {}).get(t.get("field"), {}).get("label", t.get("field"))
+    value = t.get("value")
+    if isinstance(value, list):
+        value = (" and " if t.get("cmp") == "between" else " or ").join(str(v) for v in value)
+    words = CMP_WORDS.get(t.get("cmp"), t.get("cmp"))
+    return f"{label} {words}" + (f" {value}" if value not in (None, "") else "")
+
+
+def describe_condition(node):
+    """A condition in plain words, with AND / OR / NOT in capitals and brackets around nested groups."""
+    if not isinstance(node, dict) or any(k in node and not isinstance(node[k], list) for k in GROUP_KEYS):
+        return json.dumps(node, default=str)[:120]   # malformed: shown as written (validation explains what's wrong)
+    for key in GROUP_KEYS:
+        if key in node:
+            parts = []
+            for k in node[key]:
+                text = describe_condition(k)
+                nested = isinstance(k, dict) and any(isinstance(k.get(g), list) and len(k[g]) > 1 for g in GROUP_KEYS)
+                parts.append(f"({text})" if nested else text)
+            return (" AND " if key == "all" else " OR ").join(parts)
+    if "not" in node:
+        return f"NOT ({describe_condition(node['not'])})"
+    if sum(k in node for k in TEST_KINDS) != 1:
+        return json.dumps(node, default=str)[:120]
+    try:
+        return _describe_test(node)
+    except (TypeError, AttributeError):            # wrong value types (e.g. a list as a layer): validation says why
+        return json.dumps(node, default=str)[:120]
+
+
+def check_condition(node, store, depth=0):
+    """Problems with a condition tree (an empty list means it can run on this release)."""
+    if not isinstance(node, dict) or not node:
+        return ["A condition must be a test or a group ('all', 'any', 'not')."]
+    if depth > MAX_CONDITION_DEPTH:
+        return [f"The condition is nested more than {MAX_CONDITION_DEPTH} levels deep."]
+    groups = [k for k in (*GROUP_KEYS, "not") if k in node]
+    if groups:
+        if len(node) != 1:
+            return [f"A group must be exactly one of all / any / not, with nothing beside it: {json.dumps(node)[:80]}."]
+        key = groups[0]
+        if key == "not":
+            return check_condition(node["not"], store, depth + 1)
+        kids = node[key]
+        if not isinstance(kids, list) or not kids:
+            return [f"'{key}' needs a list of conditions."]
+        return [p for k in kids for p in check_condition(k, store, depth + 1)]
+    kinds = [k for k in TEST_KINDS if k in node]
+    if len(kinds) != 1:
+        return [f"A test must be exactly one of {', '.join(TEST_KINDS)}: {json.dumps(node)[:80]}."]
+    if kinds[0] in ("sample_type", "slide_kinds") and not (isinstance(node[kinds[0]], list)
+                                                          and all(isinstance(v, str) for v in node[kinds[0]])):
+        return [f"'{kinds[0]}' needs a list of names, e.g. {kinds[0]}: [...]."]
+    if kinds[0] in ("layer", "gene") and not isinstance(node[kinds[0]], str):
+        return [f"'{kinds[0]}' needs one name, not {json.dumps(node[kinds[0]])[:40]}."]
+    if kinds[0] == "gene" and not isinstance(node.get("mutated", True), bool):
+        return ["'mutated' must be true or false."]
+    if kinds[0] == "table":
+        cmp, value = node.get("cmp"), node.get("value")
+        if not all(isinstance(node.get(k), str) for k in ("table", "field", "cmp")):
+            return [f"A field test needs table, field and cmp as names: {json.dumps(node)[:80]}."]
+        number = (int, float)
+        if cmp in ("in", "not_in", "in_raw", "stage_in", "contains") and not (isinstance(value, list) and value):
+            return [f"'{cmp}' needs a list of values, e.g. [\"Negative\"], not {json.dumps(value)[:40]}."]
+        if cmp in ("gte", "lte") and (isinstance(value, bool) or not isinstance(value, number)):
+            return [f"'{cmp}' needs a number, not {json.dumps(value)[:40]}."]
+        if cmp == "between" and not (isinstance(value, list) and len(value) == 2
+                                     and all(isinstance(v, number) and not isinstance(v, bool) for v in value)):
+            return ["'between' needs [low, high] as numbers."]
+    if "layer" in node:
+        return [] if node["layer"] in ops.LAYER_COLUMNS else [f"Unknown data layer '{node['layer']}'."]
+    if "sample_type" in node:
+        values = node["sample_type"] or []
+        bad = [v for v in values if v not in ops.SAMPLE_TYPES]
+        return [f"Unknown sample type {bad}. Use {ops.SAMPLE_TYPES}."] if bad or not values else []
+    if "gene" in node:
+        if not store.available("mutation"):
+            return ["Mutation file isn't available: run python data/tcga-brca/fetch.py"]
+        return [] if node["gene"] in store.genes() else [f"Gene '{node['gene']}' isn't in the mutation file."]
+    if "slide_kinds" in node:
+        bad = [k for k in node["slide_kinds"] or [] if k not in ops.SLIDE_KINDS]
+        return [f"Unknown slide kind {bad}."] if bad else []
+    if "table" in node:
+        table = node["table"]
+        if table not in ("clinical", "survival"):
+            return [f"A condition can test clinical or survival fields, not '{table}'."]
+        if not store.available(table):
+            return [f"{table} file isn't available: run python data/tcga-brca/fetch.py"]
+        problems = []
+        if store.resolve_field(table, node.get("field")) is None:
+            problems.append(f"This release has no column for '{node.get('field')}' in {table}.")
+        if node.get("cmp") not in CMP_WORDS:
+            problems.append(f"Unknown comparison '{node.get('cmp')}'.")
+        if node.get("cmp") == "between" and not (isinstance(node.get("value"), list) and len(node["value"]) == 2):
+            problems.append("'between' needs [low, high].")
+        return problems
+    return [f"Unknown test {json.dumps(node)[:80]}."]
 
 
 def describe_step(step, store=None):
@@ -93,6 +255,10 @@ def describe_step(step, store=None):
         return f"Keep samples {'with' if step.get('mutated', True) else 'without'} a {step['gene']} mutation call"
     if op == "dedupe":
         return "Keep one row per sample"
+    if op == "where":
+        who = {"both": "; in each tumour-normal pair, both samples must match",
+               "added_normals": "; checked on the normal sample each pair added"}.get(step.get("apply_to", "sample"), "")
+        return "Keep samples where " + describe_condition(step.get("condition") or {}) + who
     if op == "one_per_patient":
         rule = step.get("rule", "priority")
         if rule in ("earliest", "latest"):
@@ -106,6 +272,7 @@ def validate(spec, store):
     """Return a list of (step_index, message). An empty list means every step can run on this release."""
     problems = []
     joined = set()
+    pairs = False          # a tumour-normal pairs join came earlier (needed by apply_to)
     for i, step in enumerate(spec.get("steps", [])):
         op = step.get("op")
         if op == "sample_type":
@@ -133,6 +300,19 @@ def validate(spec, store):
             if bad_layers:
                 problems.append((i, f"Unknown data layer {bad_layers}."))
             joined.add(table)
+            if table == "normals" and step.get("add_to_cohort") and step.get("mode", "rows") == "rows":
+                pairs = True
+        elif op == "where":
+            cond = step.get("condition")
+            problems += [(i, msg) for msg in dict.fromkeys(check_condition(cond, store))]
+            if isinstance(cond, dict) and len(condition_tests(cond)) > MAX_CONDITION_TESTS:
+                problems.append((i, f"The condition has more than {MAX_CONDITION_TESTS} tests."))
+            apply_to = step.get("apply_to", "sample")
+            if apply_to not in ("sample", "added_normals", "both"):
+                problems.append((i, "apply_to must be 'sample', 'added_normals' or 'both'."))
+            elif apply_to != "sample" and not pairs:
+                problems.append((i, f"apply_to '{apply_to}' needs an earlier tumour-normal pairs join "
+                                    "(normals, add_to_cohort, rows mode)."))
         elif op == "filter":
             table = step.get("table")
             if table not in joined:

@@ -44,10 +44,10 @@ EXTRA_CLINICAL = {
     "year_of_initial_pathologic_diagnosis": "year of diagnosis",
     "days_to_last_followup": "days from diagnosis to last follow-up (clinical record)",
     "tissue_source_site": "tissue source site (submitting institution)",
-    "PAM50_mRNA_nature2012": "PAM50 subtype from the 2012 TCGA paper (microarray), an alternative to the RNA-seq call",
-    "ER_Status_nature2012": "ER status as curated for the 2012 TCGA paper",
-    "PR_Status_nature2012": "PR status as curated for the 2012 TCGA paper",
-    "HER2_Final_Status_nature2012": "HER2 status as curated for the 2012 TCGA paper",
+    "PAM50_mRNA_nature2012": "PAM50 subtype from the 2012 TCGA paper (microarray); use only when a request names the 2012 paper",
+    "ER_Status_nature2012": "ER status as curated for the 2012 TCGA paper; use only when a request names the paper",
+    "PR_Status_nature2012": "PR status as curated for the 2012 TCGA paper; use only when a request names the paper",
+    "HER2_Final_Status_nature2012": "HER2 status as curated for the 2012 TCGA paper; use only when a request names the paper",
 }
 
 # Words people use -> columns that can answer them.
@@ -279,21 +279,64 @@ class Catalog:
         return [(next(t for t in terms if _has_term(low, t)), what) for terms, what in NOT_IN_RELEASE
                 if any(_has_term(low, t) for t in terms)]
 
+    MUTANT_WORDS = {"MUTANT", "MUTATED", "MUTATION", "MUTATIONS", "MUT", "MT"}
+    WILDTYPE_WORDS = {"WT", "WILDTYPE", "WILD"}
+
+    def read_gene(self, token):
+        """(gene symbol, mutated) for a written token, or (None, None). The symbol in any case, written with a
+        separator ('tp-53', 'PIK3-CA'), or followed by a word that states the call: 'CDH1-mutant' -> True,
+        'TP53_WT' / 'TP53-wild-type' -> False. Any other word ('MYC-amplified', 'PTEN-loss') isn't read as a gene."""
+        up = str(token).upper().strip("-_/.")
+        if up in self.genes:
+            return up, None
+        parts = [p for p in re.split(r"[-_/ ]", up) if p]
+        if "".join(parts) in self.genes:
+            return "".join(parts), None
+        for i in range(1, len(parts)):
+            head, rest = "".join(parts[:i]), "".join(parts[i:])
+            if head in self.genes and rest in self.MUTANT_WORDS:
+                return head, True
+            if head in self.genes and rest in self.WILDTYPE_WORDS:
+                return head, False
+        return None, None
+
+    def resolve_gene(self, token):
+        return self.read_gene(token)[0]
+
     def gene_mentions(self, text):
         """Gene-like tokens in the request: found in the mutation file (with counts) or not (with close names)."""
         out = []
-        seen = set()
-        for tok in re.findall(r"[A-Za-z][A-Za-z0-9\-]{1,11}", text):
-            up = tok.upper().strip("-")
-            if up in seen or up in NOT_GENES or re.fullmatch(r"(I{1,3}|IV)[ABC]?|[TNM][0-4X][A-D]?|PAM50", up):
-                continue
-            if not (tok.isupper() or (re.search(r"\d", tok) and re.search(r"[A-Za-z]", tok))):
+        seen, seen_genes = set(), set()
+        for tok in re.findall(r"[A-Za-z][A-Za-z0-9\-_]{1,24}", text):
+            tok = tok.strip("-_/")
+            up = tok.upper()
+            head = re.split(r"[-_/]", up)[0]
+            if up in seen or up in NOT_GENES or head in NOT_GENES \
+                    or re.fullmatch(r"(I{1,3}|IV)[ABC]?|[TNM][0-4X][A-D]?|PAM50", head):
                 continue
             seen.add(up)
-            if up in self.genes:
-                out.append({"token": tok, "gene": up, "found": True, "mutated_in": self.gene_mutated_count(up)})
-            elif self.genes:
-                out.append({"token": tok, "gene": up, "found": False, "closest": self.closest_genes(up)})
+            gene = self.resolve_gene(tok)
+            note = ""
+            if not gene and head in self.genes and len(re.split(r"[-_]", tok)) > 1:
+                gene = head            # 'MYC-amplified': a gene in the file, but the word after it isn't about mutations
+                note = (f"'{tok}' may describe something other than a mutation (e.g. copy number or expression), "
+                        "which this release doesn't have per gene")
+            if gene:
+                if gene not in seen_genes:
+                    seen_genes.add(gene)
+                    out.append({"token": tok, "gene": gene, "found": True, "mutated_in": self.gene_mutated_count(gene),
+                                "note": note})
+                continue
+            # As written: all capitals ('PTEN') or letters with digits ('tp35'); report the symbol part only.
+            raw_head = re.split(r"[-_/]", tok)[0]
+            if raw_head.isupper() or (re.search(r"\d", raw_head) and re.search(r"[A-Za-z]", raw_head)):
+                name = head
+            elif re.search(r"\d", tok) and re.search(r"[A-Za-z]", tok):
+                name = up                                            # e.g. 'Ki-67': not a gene symbol as written
+            else:
+                continue
+            if self.genes:
+                out.append({"token": tok, "gene": name, "found": False, "closest": self.closest_genes(name)})
         return out
 
     def gene_mutated_count(self, gene):

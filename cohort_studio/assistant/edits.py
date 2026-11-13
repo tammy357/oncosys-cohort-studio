@@ -32,6 +32,8 @@ def signature(step):
         return ("join", step.get("table"))
     if op == "any_of":
         return ("any_of", step.get("table"), tuple(sorted(str(c.get("field")) for c in step.get("conditions", []))))
+    if op == "where":
+        return ("where", json.dumps(step.get("condition"), sort_keys=True), step.get("apply_to", "sample"))
     return (op,)
 
 
