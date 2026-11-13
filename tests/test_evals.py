@@ -17,7 +17,7 @@ from cohort_studio.assistant.prompt import RULES  # noqa: E402
 from cohort_studio.data import DataStore  # noqa: E402
 from tests.make_fixture import build  # noqa: E402
 
-RAW = json.loads(harness.CASES_FILE.read_text())["cases"]
+RAW = json.loads(harness.CASES_FILE.read_text(encoding="utf-8"))["cases"]
 CASES = harness.load_cases()
 REAL = ROOT / "data" / "tcga-brca"
 PT = {"op": "sample_type", "values": ["Primary Tumor"]}

@@ -140,6 +140,8 @@ class Checker:
             table, cond = self._condition(step.get("table"), step)
             if cond is None:
                 return None
+            if self._excludes_every_value(table, cond):
+                return self._not_recorded(table, cond)
             return {"op": "filter", "table": table, **cond}
         if op == "any_of":
             return self._any_of(step)
@@ -267,6 +269,8 @@ class Checker:
                 step = self._mutation_from_filter(node)
                 return {"gene": step["gene"], "mutated": step["mutated"]} if step else None
             table, cond = self._condition(node.get("table") or "clinical", node, in_any_of=True)
+            if cond is not None and self._excludes_every_value(table, cond):
+                return self._not_recorded(table, cond, ask=False)["condition"]
             return None if cond is None else {"table": table, **cond}
         raise _Unsupported(str(node)[:40], "Unknown condition test.")
 
@@ -359,8 +363,37 @@ class Checker:
             return None
         if len(conds) == 1:
             self._fix("any of one condition", "a single filter", "only one condition was left")
+            if self._excludes_every_value(table, conds[0]):
+                return self._not_recorded(table, conds[0])
             return {"op": "filter", "table": table, **conds[0]}
+        if any(self._excludes_every_value(table, c) for c in conds):   # 'not recorded' needs the condition step
+            return self._where({"op": "where", "condition": {"any": [{**c, "table": table} for c in conds]}})
         return {"op": "any_of", "table": table, "conditions": conds}
+
+    def _excludes_every_value(self, table, cond):
+        """A 'not one of' list that names every recorded value of the field: no sample can pass, because a value that
+        isn't recorded never passes a filter either. The draft almost always means 'the field is not recorded'."""
+        if cond.get("cmp") != "not_in":
+            return False
+        prof = self.cat.profile(table, cond["field"])
+        if prof is None or prof["numeric"]:
+            return False
+        recorded = {v["value"].lower() for v in prof["values"] if v["flag"] == ""}
+        return bool(recorded) and recorded <= {str(v).strip().lower() for v in _as_list(cond.get("value"))}
+
+    def _not_recorded(self, table, cond, ask=None):
+        """What a 'not one of every recorded value' step can mean: the field is not recorded, or no limit at all.
+        Asked when questions are allowed (the first answer is the literal reading); otherwise the literal reading is
+        used and recorded. Returns the condition step for 'not recorded' when it isn't asked."""
+        field = cond["field"]
+        missing = {"op": "where", "condition": {"not": {"table": table, "field": field, "cmp": "notnull", "value": None}}}
+        why = (f"'{field} is not one of' lists every recorded value, and a value that isn't recorded never passes, "
+               "so as written no sample could pass")
+        if self.allow_questions if ask is None else ask:
+            return self._ask(field, f"The draft excludes every recorded value of {field}. What did you mean?",
+                             why + ".", [(f"{field} is not recorded", [missing]), (f"No limit on {field}", [])])
+        self._fix(f"{field} is not one of every recorded value", f"{field} is not recorded", why)
+        return missing
 
     # ---------- one condition: field, comparison, values ----------
     def _condition(self, table, cond, in_any_of=False):

@@ -101,6 +101,15 @@ def test_review_never_swaps_in_a_cohort_with_no_samples(store):
     assert make_draft(TWO_ARMS, store, merge, compare_with_rules=True)["reconcile"]["decision"] == "ai"
 
 
+def test_an_ai_draft_with_no_samples_never_replaces_a_parser_draft_with_some(store):
+    empty = [PT, JC, ER_POS, {**ER_POS, "value": ["Negative"]}]            # ER-positive AND ER-negative: nobody
+    client = ScriptedClient({REQUEST: ai(empty), f"REVIEW: {REQUEST}": {"choice": "ai", "reason": "A."}})
+    d = make_draft(REQUEST, store, client, compare_with_rules=True)
+    assert client.calls == 1 and d["reconcile"]["decision"] == "rules" and d["reconcile"]["ai_samples"] == 0
+    assert "selects no samples" in d["reconcile"]["note"]
+    assert llm.spec_from_draft(d)["steps"] == parse_request(REQUEST, store)["steps"]
+
+
 def test_review_audit_flags_parts_no_step_carries_out(store):
     """A draft that keeps one arm of a comparison: the review names the dropped part, the verdict can't say Ready."""
     review = {"choice": "ai", "reason": "B selects nothing.", "not_done": ["versus ER-negative", "made-up words"],

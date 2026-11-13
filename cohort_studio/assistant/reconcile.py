@@ -4,6 +4,10 @@ The built-in parser (cohort_studio/parse.py) is exact on the phrases it knows an
 reads any wording but can add, drop or misread a constraint. They are compared by the samples they select:
 * the same samples, and every word of the request used by one of them: nothing more to do (no extra model call);
 * one of them can't run: the other is used (no extra model call);
+* the AI draft selects no samples and the parser's selects some: the parser's is used (no extra model call). An
+  empty AI cohort usually means a step that can't hold (e.g. a 'not one of' list naming every recorded value), and
+  the parser's unused words stay flagged for a person to confirm. Not when the parser skipped a word the AI draft
+  carries out: then the empty cohort may be the right answer, and the comparison below decides;
 * otherwise one short model call sees both drafts, their counts and the words neither used. It picks the AI draft,
   the parser's draft, or a mix (only when they select different samples), and audits the kept draft: parts of the
   request no step carries out become unused words, and readings it settled without asking become unconfirmed, so
@@ -39,7 +43,9 @@ Decide from the request's literal meaning:
 - "merge": each draft gets a different part right. Give the complete merged step list, copying every step exactly \
 from A or B. Never write a step that is in neither draft.
 If both are equally faithful, answer "ai". A draft that selects no samples can't be kept when the other selects some. \
-Sample counts show how much a difference matters; they are not a reason on their own.
+Sample counts show how much a difference matters; they are not a reason on their own. A stage-group filter \
+("cmp":"stage_in", shown as "is stage II") includes every sub-stage of the group (IIA, IIB, ...); a list of exact \
+stage values includes only the values listed.
 Then read the request part by part against the draft you kept. The steps build one set of samples: they can't make \
 two groups to compare, split, balance, sample or match.
 - "not_done": parts of the request that no step of the kept draft carries out in any form and that A doesn't \
@@ -239,6 +245,9 @@ def reconcile(draft, data, store, client, catalog, interactive=False):
     if ai_ids is None:
         return done(_use_rules(draft, rules, store, info, "The AI draft can't run on this release, so the built-in "
                                                           "parser's steps were used."))
+    if not ai_ids and rules_ids and not skipped_but_carried_out(draft, rules, request):
+        return done(_use_rules(draft, rules, store, info, f"The AI draft selects no samples and the built-in parser's "
+                                                          f"selects {len(rules_ids)}, so the parser's steps were used."))
     unaccounted = unaccounted_words(draft, rules, request)
     same = ai_ids == rules_ids
     same_note = f"The built-in parser drafted the same cohort ({len(ai_ids)} samples)."
