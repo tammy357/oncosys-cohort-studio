@@ -69,6 +69,9 @@ CONCEPTS = [
     (("tumor free", "tumour free", "disease free", "cancer status"), ["person_neoplasm_cancer_status"]),
     (("lost to follow", "lost follow"), ["lost_follow_up"]),
     (("ihc score", "her2 score", "3+", "2+", "1+"), ["her2_immunohistochemistry_level_result"]),
+    # categories defined by the IHC score and, for 2+, the ISH result
+    (("her2-low", "her2 low", "her2low", "low her2", "low-her2", "her2-zero", "her2 zero", "her2-0", "her2 0"),
+     ["her2_immunohistochemistry_level_result", "lab_procedure_her2_neu_in_situ_hybrid_outcome_type"]),
     (("fish", "in situ hybrid"), ["lab_procedure_her2_neu_in_situ_hybrid_outcome_type"]),
     (("margin",), ["margin_status"]),
     (("mastectomy", "lumpectomy", "surgery", "surgical"), ["breast_carcinoma_surgical_procedure_name"]),

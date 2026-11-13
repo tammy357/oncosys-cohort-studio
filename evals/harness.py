@@ -16,7 +16,7 @@ EXPECTED_DIR = EVALS / "expected"
 
 
 def load_cases(split="all", ids=None):
-    cases = json.loads(CASES_FILE.read_text())["cases"]
+    cases = json.loads(CASES_FILE.read_text(encoding="utf-8"))["cases"]
     by_id = {c["id"]: c for c in cases}
     for c in cases:
         if "gold_from" in c:   # a paraphrase shares another case's answer

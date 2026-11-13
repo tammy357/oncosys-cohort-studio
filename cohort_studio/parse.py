@@ -104,6 +104,13 @@ def parse_request(text, store=None):
                     "use the 2012 TCGA Nature paper's labels")
 
     # --- receptors ---
+    # HER2-low (ASCO/CAP): IHC 1+, or IHC 2+ with a negative ISH result. ISH is normally done only for 2+, so a 1+
+    # tumour needs no ISH result. Written as IHC in {1+, 2+} AND (IHC 1+ OR ISH negative).
+    if t.find(r"\bher-?2[- ]?low\b|\blow[- ]her-?2\b", "HER2-low: IHC 1+, or IHC 2+ with a negative ISH result"):
+        ihc, ish = "her2_immunohistochemistry_level_result", "lab_procedure_her2_neu_in_situ_hybrid_outcome_type"
+        clin(ihc, "in", ["1+", "2+"], "")
+        clinical_filters.append({"op": "any_of", "table": "clinical", "conditions": [
+            {"field": ihc, "cmp": "in", "value": ["1+"]}, {"field": ish, "cmp": "in", "value": ["Negative"]}]})
     if t.find(r"triple[- ]negative|\btnbc\b", "ER, PR and HER2 all negative (clinical)"):
         for f in ("er_status", "pr_status", "her2_status"):
             clin(f, "in", ["Negative"], "")
@@ -170,6 +177,20 @@ def parse_request(text, store=None):
     add_normals = bool(pair) and bool(re.search(r"pairs?|and their normal|plus (?:their |the )?normal|include (?:the |their )?normal|"
                                                 r"both (?:the )?tumou?r and (?:the )?normal", t.lower))
 
+    # --- sample types left out: "excluding metastatic samples", "except normals" ---
+    # Only explicit exclusion words: "without metastases" or "no normal tissue" can be about the patient (no distant
+    # disease, no matched normal), so they are left for a person to read. "metastatic disease / at diagnosis" is clinical.
+    excluded = set()
+    for m in t.find(r"(?:excluding|exclude|except(?:\s+for)?|other than|but not|apart from|leaving out|omitting)\s+"
+                    r"(?:the\s+|any\s+|all\s+)?(metastatic(?:\s+(?:samples?|specimens?|tumou?rs?|lesions?|tissues?))?|"
+                    r"metastases|mets\b|(?:solid[- ]tissue[- ]|adjacent[- ])?normals?(?:[- ]tissues?)?(?:\s+samples?)?|"
+                    r"primary(?:\s+tumou?rs?)?(?:\s+samples?)?)(?!\s+(?:at|disease|status|sites?)\b)"):
+        word = m.group(1)
+        kind = "Metastatic" if word.startswith(("meta", "mets")) else \
+            "Solid Tissue Normal" if "normal" in word else "Primary Tumor"
+        excluded.add(kind)
+        t.understood.append({"phrase": m.group(0), "meaning": f"leave out {kind} samples"})
+
     # --- sample types ---
     types = []
     if t.find(r"all samples?|every sample|any sample type|all sample types", "all sample types"):
@@ -183,11 +204,13 @@ def parse_request(text, store=None):
     if not types and pair:
         types = ["Primary Tumor"]
     if not types:
-        types = ["Primary Tumor"]
-        notes.append("No sample type was named, so the cohort starts from primary tumors. Edit the first step if you meant something else.")
+        types = ["Primary Tumor"] if "Primary Tumor" not in excluded else [x for x in ops.SAMPLE_TYPES if x not in excluded]
+        notes.append(f"No sample type was named, so the cohort starts from {' and '.join(types).lower()} samples. "
+                     "Edit the first step if you meant something else.")
     if pair and "Primary Tumor" not in types and "Metastatic" not in types:
         types.append("Primary Tumor")
-    types = [x for x in ops.SAMPLE_TYPES if x in types]
+    types = [x for x in ops.SAMPLE_TYPES if x in types and x not in excluded] or \
+        [x for x in ops.SAMPLE_TYPES if x not in excluded]
 
     # --- slides ---
     has_slide_word = bool(re.search(r"slides?|images?|histolog|patholog|h&e|\bwsi\b|whole[- ]slide|sections?", t.lower))
@@ -213,6 +236,31 @@ def parse_request(text, store=None):
             layers.append(layer)
     if gene_steps and "mutation" not in layers:
         layers.append("mutation")
+
+    # --- minimum follow-up (before ages, so "at least 5 years of follow-up" isn't read as an age) ---
+    # Follow-up length is overall-survival time (days to death or last contact); years -> days x 365.25.
+    # "... or a death (recorded)" keeps short-follow-up patients who had the event: an OR, not an AND.
+    more = r"at least|over|more than|longer than|a minimum of|minimum of|>=|≥|>"
+    unit = r"years?|yrs?|months?|days?"
+    follow_up = (rf"(?:(?:(?P<w1>{more})\s*)?(?P<n1>\d+(?:\.\d+)?)\s*\+?\s*(?P<u1>{unit})\s*\+?\s*(?:of\s+)?follow[- ]?up"
+                 rf"|follow[- ]?up\s+(?:time\s+)?(?:of\s+)?(?P<w2>{more})\s*(?P<n2>\d+(?:\.\d+)?)\s*\+?\s*(?P<u2>{unit})"
+                 rf"|followed(?:\s+up)?\s+(?:for\s+)?(?:(?P<w3>{more})\s*)?(?P<n3>\d+(?:\.\d+)?)\s*\+?\s*(?P<u3>{unit}))"
+                 r"(?:\s*,?\s*or\s+(?:a\s+|an\s+)?(?:recorded\s+)?(?P<event>deaths?|died|deceased|progression|progressed)"
+                 r"(?:\s+(?:was\s+)?(?:recorded|event|occurred))?)?")
+    for m in t.find(follow_up):
+        n, u, w = float(m["n1"] or m["n2"] or m["n3"]), m["u1"] or m["u2"] or m["u3"], m["w1"] or m["w2"] or m["w3"]
+        days = round(n * 365.25 if u.startswith("y") else n * 30.4375 if u.startswith("m") else n)
+        days += 1 if w in ("over", "more than", "longer than", ">") else 0
+        limit = {"field": "os_time", "cmp": "gte", "value": int(days)}
+        meaning = f"overall-survival time (follow-up) ≥ {int(days)} days"
+        if m["event"]:
+            event = "pfi" if m["event"].startswith("progress") else "os"
+            survival_filters.append({"op": "any_of", "table": "survival", "conditions": [
+                limit, {"field": event, "cmp": "is_event", "value": None}]})
+            meaning += f", or a {'progression' if event == 'pfi' else 'death'} recorded"
+        else:
+            survival_filters.append({"op": "filter", "table": "survival", **limit})
+        t.understood.append({"phrase": m.group(0), "meaning": meaning})
 
     # --- survival endpoints ---
     for pattern, field, cmp, words in [
@@ -321,7 +369,7 @@ def parse_request(text, store=None):
                    "her2_status": "HER2_Final_Status_nature2012", "pam50": "PAM50_mRNA_nature2012"}
         pam50_names = {"LumA": "Luminal A", "LumB": "Luminal B", "Her2": "HER2-enriched", "Basal": "Basal-like",
                        "Normal": "Normal-like"}
-        switched = [f for f in clinical_filters if f["field"] in columns]
+        switched = [f for f in clinical_filters if f.get("field") in columns]
         for f in switched:
             if f["field"] == "pam50" and isinstance(f["value"], list):
                 f["value"] = [pam50_names.get(v, v) for v in f["value"]]

@@ -163,6 +163,31 @@ def test_years_or_days_is_asked(store, cat):
     assert q["options"][0]["steps"][0]["value"] == 1826 and q["options"][1]["steps"][0]["value"] == 5
 
 
+def test_not_one_of_every_recorded_value_is_asked_not_left_empty(store, cat):
+    # fixture er_status is Positive or Negative ('[Not Evaluated]' = not recorded): excluding both selects nobody
+    not_recorded = {"op": "where", "condition": {"not": {"table": "clinical", "field": "er_status", "cmp": "notnull",
+                                                         "value": None}}}
+    chk = Checker(store, cat)
+    assert chk.check_steps([F("er_status", "not_in", ["Positive", "Negative"])]) == []
+    [q] = chk.questions
+    assert q["options"][0]["steps"] == [not_recorded] and q["options"][1]["steps"] == []
+    assert cohort(store, [PT, not_recorded]) == ids(6)
+    # in a condition (no questions there) the literal reading is used and recorded
+    chk = Checker(store, cat)
+    [step] = chk.check_steps([{"op": "where", "condition": {"any": [
+        {"table": "clinical", "field": "er_status", "cmp": "not_in", "value": ["positive", "negative"]},
+        {"table": "clinical", "field": "pr_status", "cmp": "in", "value": ["Negative"]}]}}])
+    assert not_recorded["condition"] in step["condition"]["any"] and any("not recorded" in c["to"] for c in chk.corrections)
+    assert cohort(store, [PT, step]) == ids(3, 5, 6)
+    # an OR of filters needs the condition step to say 'not recorded'
+    [step] = Checker(store, cat).check_steps([{"op": "any_of", "table": "clinical", "conditions": [
+        {"field": "er_status", "cmp": "not_in", "value": ["Positive", "Negative"]},
+        {"field": "pr_status", "cmp": "in", "value": ["Negative"]}]}])
+    assert step["op"] == "where" and cohort(store, [PT, step]) == ids(3, 5, 6)
+    # a list that leaves a recorded value out is an ordinary filter
+    assert Checker(store, cat).check_steps([F("er_status", "not_in", ["Positive"])]) == [F("er_status", "not_in", ["Positive"])]
+
+
 def test_canonical_order_adds_sample_type_and_joins():
     steps, notes = canonicalize([F("er_status", "in", ["Positive"]), {"op": "layer", "layer": "rna"}])
     assert [s["op"] for s in steps] == ["sample_type", "layer", "join", "filter"] and notes
@@ -329,6 +354,8 @@ def test_real_release_grounding():
     assert fixed["field"] == "history_of_neoadjuvant_treatment"
     assert c.closest_genes("TP35")[0] == "TP53"
     assert "pathologic_N" in c.relevant_fields("lymph node positive tumours")
+    assert {"her2_immunohistochemistry_level_result", "lab_procedure_her2_neu_in_situ_hybrid_outcome_type"} <= \
+        set(c.relevant_fields("HER2-low tumours"))           # a category defined by the IHC score and the ISH result
     assert "person_neoplasm_cancer_status" not in c.relevant_fields("patients whose cancer progressed")
     assert c.missing_concepts("smokers")
     d = assemble("patients whose cancer progressed, with RNA data",
@@ -390,6 +417,9 @@ def test_prompt_rules_for_endpoints_per_patient_and_her2():
     assert "her2_status (TCGA's recorded HER2 status by IHC)" in RULES      # plain 'HER2 positive' is the status
     assert "when the request names a score (0, 1+, 2+, 3+) or a category defined by scores" in RULES
     assert "never just one of the groups" in RULES                         # compare / split / balance: not steps
+    assert "HER2-low (ASCO/CAP) is IHC 1+, or IHC 2+ with a negative ISH result" in RULES
+    assert "a 1+ tumour needs no ISH result" in RULES                       # untested 1+ tumours stay in
+    assert "only removes it from the sample_type step; it is never a clinical filter" in RULES
 
 
 # ---------- the 'where' step: AND / OR / NOT across tables, layers, genes and slides ----------

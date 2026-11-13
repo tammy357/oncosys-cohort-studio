@@ -72,7 +72,7 @@ def freeze(cases, store):
         c["expect"] = {"inflated_steps": inflated_steps(spec, store), "samples_after_fix": len(ids)}
         print(f"{c['id']:<32} inflates at {[s['step'] for s in c['expect']['inflated_steps']] or '-'}  "
               f"-> {len(ids)} samples after the fix")
-    data = json.loads(CASES.read_text())
+    data = json.loads(CASES.read_text(encoding="utf-8"))
     data["cases"] = cases
     CASES.write_text(json.dumps(data, indent=1))
 
@@ -96,7 +96,7 @@ def main(argv=None):
     if not store.available("clinical"):
         print("Clinical/survival files are missing: run python data/tcga-brca/fetch.py --no-rna")
         return 2
-    cases = json.loads(CASES.read_text())["cases"]
+    cases = json.loads(CASES.read_text(encoding="utf-8"))["cases"]
     if args.freeze:
         return freeze(cases, store)
 

@@ -182,6 +182,49 @@ def test_numbers_that_are_not_ages(request_text):
     assert not [s for s in parse_request(request_text)["steps"] if s.get("field") == "age"]
 
 
+@pytest.mark.parametrize("request_text, days", [
+    ("tumours with at least 5 years of follow-up", 1826), ("primary tumours followed for 5+ years", 1826),
+    ("patients with follow-up of at least 36 months", 1096), ("tumours with over 2 years of follow-up", 731)])
+def test_minimum_follow_up_is_survival_time_not_age(request_text, days):
+    steps = parse_request(request_text)["steps"]
+    assert not [s for s in steps if s.get("field") == "age"]
+    assert {"op": "filter", "table": "survival", "field": "os_time", "cmp": "gte", "value": days} in steps
+
+
+def test_follow_up_or_a_death_is_an_or(store):
+    spec = parse_request("stage I–III primary tumours with at least 5 years of follow-up or a death recorded", store)
+    assert [s for s in spec["steps"] if s["op"] == "any_of"] == [{"op": "any_of", "table": "survival", "conditions": [
+        {"field": "os_time", "cmp": "gte", "value": 1826}, {"field": "os", "cmp": "is_event", "value": None}]}]
+    assert not [s for s in spec["steps"] if s.get("cmp") == "is_event"] and not spec["unparsed"]   # not ANDed with death
+    # fixture: nobody is followed 5 years; patients 3 and 5 died; 5 is stage IV
+    assert sorted(run_fixed(spec, store).cohort_ids) == ids(3)
+
+
+@pytest.mark.parametrize("request_text, types", [
+    ("lobular carcinomas with any pathology slide, excluding metastatic samples", ["Primary Tumor"]),
+    ("all samples except normal samples", ["Primary Tumor", "Metastatic"])])
+def test_excluding_a_sample_type_leaves_it_out(store, request_text, types):
+    spec = parse_request(request_text, store)
+    assert spec["steps"][0] == {"op": "sample_type", "values": types}
+    assert not {"excluding", "except"} & set(spec["unparsed"])
+
+
+def test_excluding_metastatic_disease_is_left_for_a_person():
+    # about the patient's disease at diagnosis, not the sample type: the parser can't read it, so it says so
+    assert "excluding" in parse_request("lobular tumours, excluding metastatic disease at diagnosis")["unparsed"]
+
+
+def test_her2_low_is_ihc_1_or_2_with_a_negative_ish():
+    ihc, ish = "her2_immunohistochemistry_level_result", "lab_procedure_her2_neu_in_situ_hybrid_outcome_type"
+    for text in ("HER2-low tumours", "HER2-low tumours per the Nature 2012 paper"):
+        spec = parse_request(text)
+        assert {"op": "filter", "table": "clinical", "field": ihc, "cmp": "in", "value": ["1+", "2+"]} in spec["steps"]
+        assert {"op": "any_of", "table": "clinical", "conditions": [{"field": ihc, "cmp": "in", "value": ["1+"]},
+                {"field": ish, "cmp": "in", "value": ["Negative"]}]} in spec["steps"]
+        assert not [s for s in spec["steps"] if s.get("field") in ("her2_status", "HER2_Final_Status_nature2012")]
+        assert not spec["unparsed"]
+
+
 def test_single_luminal_subtype_still_works(store):
     [f] = [s for s in parse_request("luminal B tumours", store)["steps"] if s.get("field") == "pam50"]
     assert f["value"] == ["LumB"]
