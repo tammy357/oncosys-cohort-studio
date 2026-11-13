@@ -101,8 +101,11 @@ python -m pytest tests -q                            # tests (synthetic fixture 
 - **Port already in use:** `streamlit run app.py --server.port 8502`.
 
 A conversational web app with AI questions, autocomplete, saved searches and favourites is in
-[frontend/](frontend/README.md): `pip install -r frontend/requirements.txt`, then `python frontend/server.py`.
-
+[frontend/](frontend/README.md): 
+```bash
+pip install -r frontend/requirements.txt
+python frontend/server.py
+```
 Requests that only use sample types, data layers and slides work straight from the committed manifests.
 Clinical, survival and mutation filters need `fetch.py` first; until then the tool says
 **Insufficient Evidence** and tells you which file is missing.
@@ -185,14 +188,123 @@ change the cohort.
   change the cohort (for example what "hormone-receptor positive" means), it asks, showing how many samples each
   answer gives. The web app asks you; the Streamlit app and the CLI use the recommended answer and leave it for a
   person to confirm.
-- **Keys come from the user:** paste your own key in the sidebar (not stored), or set `ANTHROPIC_API_KEY`.
-- **Local models work too,** through any OpenAI-compatible endpoint, e.g.
-  `OPENAI_BASE_URL=http://localhost:11434/v1 COHORT_STUDIO_MODEL=llama3.1`.
+- **Keys come from the user:** paste your own key in the sidebar (not stored), or set `ANTHROPIC_API_KEY` or
+  `OPENAI_API_KEY`. See [Run with a hosted model (your own key)](#run-with-a-hosted-model-your-own-key) below.
+- **Local models work too,** through any OpenAI-compatible endpoint. See
+  [Run with a local model (Ollama)](#run-with-a-local-model-ollama) below.
 - **No keys are in this repository.**
 - **When the data can't answer,** the tool says so: missing files, missing fields, unknown genes or unused words
   lead to Insufficient Evidence or Blocked, with the reason.
 
 No model is trained, so no model card is needed.
+
+### Run with a hosted model (your own key)
+
+The most accurate option, and nothing to install: the AI step calls the provider directly. You need your own API
+key from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/api-keys), and each
+request costs a small amount on that key.
+
+| Provider | Default model | Key variable | Pick another model with |
+|---|---|---|---|
+| Anthropic | `claude-haiku-5-5` | `ANTHROPIC_API_KEY` | `COHORT_STUDIO_MODEL=...` or the sidebar's Model field |
+| OpenAI | `gpt-4.1-mini` | `OPENAI_API_KEY` | `COHORT_STUDIO_MODEL=...` or the sidebar's Model field |
+
+- **Streamlit app:** start it with `streamlit run app.py`, then in the sidebar, turn on
+  `Draft steps with an AI model`, choose the `Provider` and paste your key. Leave `Model` and `Base URL` empty to use the default. The key stays in your browser session and isn't saved.
+- **Command line:**
+
+  ```bash
+  ANTHROPIC_API_KEY=sk-ant-... python -m cohort_studio --ai anthropic "ER-positive tumors"
+  OPENAI_API_KEY=sk-...        python -m cohort_studio --ai openai    "ER-positive tumors"
+  ```
+
+- **Web app:** copy the template with `cp .env.example .env` and uncomment your key line in `.env` (e.g.
+  `OPENAI_API_KEY=sk-...`), or set the key in the environment, then start `python frontend/server.py`. Add `COHORT_STUDIO_PROVIDER=anthropic` to use
+  Claude. The server stops calling the model after 200 calls per run (`COHORT_STUDIO_AI_CALL_LIMIT`), so a
+  low-balance key can't be drained by accident.
+
+If the provider can't be reached, or the key is wrong or out of credit, the app says so and the built-in parser
+drafts the steps instead.
+
+### Run with a local model (Ollama)
+
+Free and private (nothing leaves your computer), with no key. It's slower and less accurate than a hosted model.
+
+> [!NOTE]
+> We tested Cohort Studio with `qwen2.5:7b` on our laptop, so the steps below use that model. Any model Ollama
+> can run should work: replace `qwen2.5:7b` with its name everywhere. Speed and accuracy will differ, and the
+> benchmark (see the end of this section) is how to compare.
+
+**1. One-time setup.** Install Ollama from [ollama.com](https://ollama.com), then download the model we tested
+(~4.7 GB):
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+**2. Start Ollama with enough room for the AI's instructions.** Leave this terminal open:
+
+```bash
+OLLAMA_CONTEXT_LENGTH=8192 OLLAMA_KEEP_ALIVE=60m ollama serve
+```
+
+- `OLLAMA_CONTEXT_LENGTH=8192`: the AI's instructions take about 3,500 of Ollama's default 4,096 tokens, so a
+  longer answer (for example one with questions) would be cut off and the AI step would fail.
+- `OLLAMA_KEEP_ALIVE=60m`: keeps the model loaded between requests instead of reloading it each time.
+
+> [!IMPORTANT]
+> If Ollama already runs in the background (the Mac and Windows apps and the Linux installer start it
+> automatically), these settings won't apply. Quit it first (on Linux: `sudo systemctl stop ollama`), then run the
+> command above.
+
+**3. Check it's ready.** Load the model, then look at where it runs:
+
+```bash
+curl -s http://localhost:11434/api/generate -d '{"model": "qwen2.5:7b", "keep_alive": "60m"}' > /dev/null
+ollama ps          # PROCESSOR should say 100% GPU
+```
+
+> [!TIP]
+> If it says CPU or splits between CPU and GPU, close other apps that use the graphics card (browser tabs, video)
+> and check again. On the CPU the model is usually too slow to answer in time.
+
+**4. Use it.**
+
+- **Streamlit app:** keep Ollama running, and in a second terminal start the app with `streamlit run app.py`.
+  Then in the sidebar, turn on `Draft steps with an AI model`, set Provider to `openai`, leave the key empty, set Model to `qwen2.5:7b` and Base URL to `http://localhost:11434/v1`.
+- **Command line:**
+
+  ```bash
+  OPENAI_BASE_URL=http://localhost:11434/v1 COHORT_STUDIO_MODEL=qwen2.5:7b \
+      python -m cohort_studio --ai openai "ER-positive tumors"
+  ```
+
+- **Web app:**
+
+  ```bash
+  COHORT_STUDIO_PROVIDER=openai OPENAI_BASE_URL=http://localhost:11434/v1 COHORT_STUDIO_MODEL=qwen2.5:7b \
+      python frontend/server.py
+  ```
+
+**What to expect** (from our tests with `qwen2.5:7b`)
+
+- Each request took about 30–90 seconds on the tested laptop, and the first one is slower while the model loads. The
+  AI step gives up after 90 seconds (the `timeout=90` default of `LLMClient` in
+  [`cohort_studio/assistant/client.py`](cohort_studio/assistant/client.py#L54C100-L54C102)); the
+  built-in parser then drafts the steps and the app says so.
+- On the 20 held-out benchmark cases it got 9 exactly right. It's a small model; a hosted model (with your own
+  key) is more accurate.
+
+> [!CAUTION]
+> In our tests its most common mistake was adding a step nobody asked for (for example "no protein data"), which
+> silently changes the cohort. Check the drafted steps before running them, whichever model you use.
+
+To measure a model yourself, run the benchmark in [evals/](evals/README.md):
+
+```bash
+python evals/run_eval.py --parser ai --provider openai --base-url http://localhost:11434/v1 \
+    --model qwen2.5:7b --jobs 1
+```
 
 ## Data
 
@@ -210,17 +322,17 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 
 | Path | What it is |
 |---|---|
-| `app.py` | Streamlit app |
-| `cohort_studio/ops.py` | The data operations, shared by the app and the exported script |
-| `cohort_studio/parse.py` | Plain English → steps, without AI |
-| `cohort_studio/llm.py` | Optional AI drafting for the Streamlit app and CLI (user's key or a local model) |
-| `cohort_studio/assistant/` | The grounded AI route: release catalogue, prompt, step checks, questions with counts |
-| `frontend/` | Web app: FastAPI server, single-page interface, SQLite/Postgres storage |
-| `cohort_studio/engine.py` | Runs the steps, records the ledger, detects and fixes inflation, measures shift |
-| `cohort_studio/verdict.py` | The verdict and its checks |
-| `cohort_studio/exports.py` | `cohort_samples.csv`, reproduce script, findings.json and the rest |
-| `tests/` | Tests on a synthetic fixture (made-up `TCGA-ZZ-…` barcodes) and the real manifests |
-| `CHALLENGE_README.md` | The organizers' original README |
+| [`app.py`](app.py) | Streamlit app |
+| [`cohort_studio/ops.py`](cohort_studio/ops.py) | The data operations, shared by the app and the exported script |
+| [`cohort_studio/parse.py`](cohort_studio/parse.py) | Plain English → steps, without AI |
+| [`cohort_studio/llm.py`](cohort_studio/llm.py) | Optional AI drafting for the Streamlit app and CLI (user's key or a local model) |
+| [`cohort_studio/assistant/`](cohort_studio/assistant/) | The grounded AI route: release catalogue, prompt, step checks, questions with counts |
+| [`frontend/`](frontend/) | Web app: FastAPI server, single-page interface, SQLite/Postgres storage |
+| [`cohort_studio/engine.py`](cohort_studio/engine.py) | Runs the steps, records the ledger, detects and fixes inflation, measures shift |
+| [`cohort_studio/verdict.py`](cohort_studio/verdict.py) | The verdict and its checks |
+| [`cohort_studio/exports.py`](cohort_studio/exports.py) | `cohort_samples.csv`, reproduce script, findings.json and the rest |
+| [`tests/`](tests/) | Tests on a synthetic fixture (made-up `TCGA-ZZ-…` barcodes) and the real manifests |
+| [`CHALLENGE_README.md`](CHALLENGE_README.md) | The organizers' original README |
 
 ## Third-party code
 

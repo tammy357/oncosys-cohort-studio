@@ -17,6 +17,7 @@ data/clinical-trials/raw/
 output/
 .pytest_cache/
 .env
+!.env.example
 # Web app's local database (searches, favourites, cached model replies)
 frontend/.data/
 
