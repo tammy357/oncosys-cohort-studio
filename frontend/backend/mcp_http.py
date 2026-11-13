@@ -19,9 +19,9 @@ from cohort_studio.parse import parse_request
 
 from .service import ServiceError
 
-# Exact hosts only: a wildcard on vercel.app or onrender.com would admit any project someone names like ours.
+# Exact hosts only: a wildcard on vercel.app or maplestreettax.site would admit any project someone names like ours.
 ALLOWED_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$|"
-                            r"^https://(oncosys-cohort-studio-static\.vercel\.app|oncosys-cohort-studio\.onrender\.com|"
+                            r"^https://(oncosys-cohort-studio-static\.vercel\.app|api\.maplestreettax\.site|"
                             r"claude\.ai|claude\.com)$")
 
 

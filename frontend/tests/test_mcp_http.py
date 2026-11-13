@@ -46,9 +46,10 @@ def test_streamable_http_basics(tmp_path, data_dir):
     assert c.get("/mcp").status_code == 405
     assert rpc(c, "tools/list").json()["result"]["tools"]
     for origin in ("https://evil.example", "https://oncosys-cohort-studio-evil.vercel.app",
-                   "https://oncosys-cohort-studio.onrender.com.evil.example"):
+                   "https://api.maplestreettax.site.evil.example", "https://evil.maplestreettax.site"):
         assert rpc(c, "ping", headers={"origin": origin}).status_code == 403, origin
-    for origin in ("http://localhost:6274", "https://oncosys-cohort-studio-static.vercel.app", "https://claude.ai"):
+    for origin in ("http://localhost:6274", "https://oncosys-cohort-studio-static.vercel.app", "https://claude.ai",
+                   "https://api.maplestreettax.site"):
         assert rpc(c, "ping", headers={"origin": origin}).status_code == 200, origin
     assert c.post("/mcp", content=b"{not json", headers=HEADERS).json()["error"]["code"] == -32700
 

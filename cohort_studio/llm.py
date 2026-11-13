@@ -88,8 +88,7 @@ def draft_spec(request, store, ai="auto", provider=None, api_key=None, model=Non
             tried.append("no model key of your own (OPENAI_API_KEY, ANTHROPIC_API_KEY or OPENAI_BASE_URL)")
         if ai == "auto":
             if hosted.enabled():
-                say("Asking the hosted Cohort Studio AI service (after a quiet spell it can take up to a minute "
-                    "to wake up)...")
+                say("Asking the hosted Cohort Studio AI service...")
             try:
                 reply = hosted.draft(request)
                 spec, problems = reply["spec"], validate(reply["spec"], store)

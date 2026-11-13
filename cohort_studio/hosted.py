@@ -13,7 +13,7 @@ import os
 import urllib.error
 import urllib.request
 
-DEFAULT_URL = "https://oncosys-cohort-studio.onrender.com"
+DEFAULT_URL = "https://api.maplestreettax.site"
 MAX_REQUEST_CHARS = 2000
 
 

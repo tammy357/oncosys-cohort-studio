@@ -38,20 +38,20 @@ files.
 | **Web app: <https://oncosys-cohort-studio-static.vercel.app/>** | The main way to use it: type a request, answer the AI's questions, check and edit the steps, fix any inflating join, compare versions, export | Open the link; nothing to install |
 | **Command line** | One request, or a whole file of them (the path a judge's new request can take) | `python -m cohort_studio "..."` (see [Quick start](#quick-start-from-a-fresh-clone-about-5-minutes)) |
 | **A file or your own Python** | Many cohorts at once, or Cohort Studio inside an analysis | `--file`, or `cohort_studio.api.build_cohort` |
-| **AI agents (MCP)** | Claude, Cursor or any MCP client building cohorts as tools | Add `https://oncosys-cohort-studio.onrender.com/mcp` (see [For AI agents](#for-ai-agents-mcp)) |
+| **AI agents (MCP)** | Claude, Cursor or any MCP client building cohorts as tools | Add `https://api.maplestreettax.site/mcp` (see [For AI agents](#for-ai-agents-mcp)) |
 | Streamlit app, local web app | Working offline, development | `streamlit run app.py`, `python frontend/server.py` |
 
 ### How the services fit together
 
-- **Vercel** serves the web app's pages and forwards every `/api/...` call to Render.
-- **Render** runs the backend ([`frontend/server.py`](frontend/server.py)): the web app's API, the hosted AI service
-  (`/api/v1`) and the MCP server (`/mcp`). It holds the model key and its own copy of the frozen release. Its
-  Postgres database keeps saved searches, a cache of model replies (the same request gets the same draft) and the AI
-  usage counts.
+- **Vercel** serves the web app's pages and forwards every `/api/...` call to the backend on AWS.
+- **AWS** (one EC2 server, `api.maplestreettax.site`) runs the backend ([`frontend/server.py`](frontend/server.py)): the
+  web app's API, the hosted AI service (`/api/v1`) and the MCP server (`/mcp`). It holds the model key and its own copy
+  of the frozen release. Its database (a SQLite file on the server's disk) keeps saved searches, a cache of model
+  replies (the same request gets the same draft) and the AI usage counts.
 - **Your computer** (a clone, for the command line, files, Python, Streamlit or the local MCP server) runs the engine
-  on your own copy of the data. It asks Render only to draft a plain-English request, and only when you have no
-  model key of your own.
-- **The model provider** is called only by Render, with the team's key, or directly by your own key.
+  on your own copy of the data. It asks the AWS backend only to draft a plain-English request, and only when you
+  have no model key of your own.
+- **The model provider** is called only by the backend, with the team's key, or directly by your own key.
 
 ### What you can send
 
@@ -125,13 +125,12 @@ Cohort Studio is also an [MCP](https://modelcontextprotocol.io) server, so an AI
 | `build_cohort` | A request or a definition → each step's rows, samples and patients, any inflating join fixed, the verdict, the sample IDs and the final definition |
 | `get_cohort_file` | A definition → `cohort_samples.csv`, `reproduce_cohort.py` or any other export |
 
-**Hosted (nothing to install):** add `https://oncosys-cohort-studio.onrender.com/mcp` as a remote MCP server
+**Hosted (nothing to install):** add `https://api.maplestreettax.site/mcp` as a remote MCP server
 (streamable HTTP). Plain-English requests are drafted by the service's model within the
-[limits](#limits-on-the-hosted-ai-service), and by the built-in parser beyond them. The first call after a quiet
-spell can take up to a minute while the server wakes.
+[limits](#limits-on-the-hosted-ai-service), and by the built-in parser beyond them.
 
 ```bash
-claude mcp add --transport http cohort-studio https://oncosys-cohort-studio.onrender.com/mcp
+claude mcp add --transport http cohort-studio https://api.maplestreettax.site/mcp
 # with a personal token: add  --header "Authorization: Bearer $COHORT_STUDIO_API_TOKEN"
 ```
 
@@ -198,7 +197,7 @@ python -m cohort_studio "primary tumors with both RNA and protein data and a dia
 ```
 
 With internet access the steps are drafted by AI: your own key if you've set one, otherwise the hosted Cohort Studio
-service (the first request after a quiet spell can take up to a minute while it wakes). Without internet the built-in
+service. Without internet the built-in
 parser drafts them. `Drafted by:` says which. Add `--rules` to use only the built-in parser.
 
 You should see step 4 flagged (`776` rows for `731` samples), the fix applied, then:
@@ -456,7 +455,7 @@ python evals/run_eval.py --parser ai --provider openai --base-url http://localho
 
 ## Running the hosted AI service
 
-For maintainers. The web app's backend ([`frontend/server.py`](frontend/server.py), deployed on Render) is also the
+For maintainers. The web app's backend ([`frontend/server.py`](frontend/server.py), deployed on AWS) is also the
 hosted AI service:
 - `POST /api/v1/draft` with `{"request": "..."}` returns the drafted, checked spec.
 - `GET /api/v1/status` reports whether a model is configured and the caller's limits.
@@ -491,7 +490,7 @@ the model provider's own dashboard as a second guard.
 
 The per-address and per-person limits stop accidents and casual overuse, not a determined abuser: without a token, a
 caller is identified by the address in the proxy's `X-Forwarded-For` header and the browser's user id, and someone
-calling Render directly can fake both. The daily budget can't be faked; at worst one abuser uses up a day's AI for
+calling the server directly can fake both. The daily budget can't be faked; at worst one abuser uses up a day's AI for
 everyone, who then get the built-in parser. To close the command-line and agent routes to strangers, give the team
 tokens and set `COHORT_STUDIO_REQUIRE_TOKEN=on`.
 
