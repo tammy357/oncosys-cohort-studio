@@ -315,6 +315,10 @@ class Catalog:
                     or re.fullmatch(r"(I{1,3}|IV)[ABC]?|[TNM][0-4X][A-D]?|PAM50", head):
                 continue
             seen.add(up)
+            # Only words written like a gene symbol: capitals ('PTEN', 'MYC-amplified') or with a digit ('tp53',
+            # 'tp-53'). Lowercase words that happen to be symbols ('per' patient, 'set', 'rest') are ordinary English.
+            if not (re.split(r"[-_/]", tok)[0].isupper() or re.search(r"\d", tok)):
+                continue
             gene = self.resolve_gene(tok)
             note = ""
             if not gene and head in self.genes and len(re.split(r"[-_]", tok)) > 1:
