@@ -21,7 +21,10 @@ from cohort_studio.assistant.draft import run_cohort
 
 from .advanced import FormError, build_spec, form_options
 from .compare import CompareError, compare, metrics_for_model
+from .limits import Caller, LimitExceeded, UsageGuard
 from .suggest import Suggester
+
+MAX_QUERY_CHARS = 2000
 
 _PT = {"op": "sample_type", "values": ["Primary Tumor"]}
 _JC = {"op": "join", "table": "clinical", "key": "sample_id", "mode": "rows"}
@@ -131,6 +134,7 @@ class Service:
         if self.client is None and settings.ai_enabled:
             self.client = LLMClient(cache=storage.llm_cache)
         self.suggester = Suggester(self.store, self.catalog)
+        self.guard = UsageGuard(settings, storage)
         self._lock = threading.Lock()
         self.ai_calls, self.tokens = 0, {"input": 0, "output": 0, "cached_input": 0, "reasoning": 0}
         self.presets = [self._preset_view(p) for p in PRESETS]
@@ -203,11 +207,62 @@ class Service:
                             "genes": len(self.catalog.genes),
                             "clinical_fields": len(self.catalog.profiles)}}
 
+    # ---------- paid model calls: limits and accounting ----------
+    def _ai_allowed(self, caller):
+        """Raise ServiceError(429) if the model may not be called now for this caller."""
+        with self._lock:
+            if self.ai_calls >= self.settings.ai_call_limit:
+                raise ServiceError(f"This server has used its limit of {self.settings.ai_call_limit} model calls. "
+                                   "Restart it or raise COHORT_STUDIO_AI_CALL_LIMIT.", 429)
+        try:
+            self.guard.check(caller)
+        except LimitExceeded as exc:
+            raise ServiceError(str(exc), 429)
+
+    def _account(self, caller, out):
+        with self._lock:
+            if not out.get("cached"):
+                self.ai_calls += 1
+                for k in self.tokens:
+                    self.tokens[k] += int((out.get("usage") or {}).get(k, 0) or 0)
+        self.guard.record(caller, out.get("usage"), getattr(self.client, "model", ""), cached=bool(out.get("cached")))
+
+    # ---------- the hosted AI service for the CLI and scripts (/api/v1) ----------
+    def api_draft(self, caller, request):
+        """Draft a request with the server's model, the same way the CLI does with a user's own key (questions
+        get their recommended answer, the draft is compared with the built-in parser). Returns the runnable spec."""
+        from cohort_studio.llm import spec_from_draft
+        request = (request or "").strip()
+        if not request:
+            raise ServiceError("Send {\"request\": \"...\"} with the cohort in plain English.")
+        if len(request) > MAX_QUERY_CHARS:
+            raise ServiceError(f"The request is longer than {MAX_QUERY_CHARS} characters.", 413)
+        if not self.ai_status()["available"]:
+            raise ServiceError("This server has no AI model configured.", 503)
+        self._ai_allowed(caller)
+        try:
+            d = make_draft(request, self.store, self.client, catalog=self.catalog, compare_with_rules=True)
+        except AIError as exc:
+            raise ServiceError(str(exc), 502)
+        self._account(caller, d)
+        spec = spec_from_draft(d)
+        return {"spec": spec, "problems": [m for _, m in validate(spec, self.store)], "model": self.client.label,
+                "limits": self.guard.status(caller)}
+
+    def api_status(self, caller):
+        ai = self.ai_status()
+        return {"ai": {"available": ai["available"], "model": ai.get("model"), "reason": ai.get("reason")},
+                "limits": self.guard.status(caller)}
+
     # ---------- drafting ----------
-    def draft(self, user, query, use_ai=True, refine_search_id=None, current_steps=None, current_request=None, history=None):
+    def draft(self, user, query, use_ai=True, refine_search_id=None, current_steps=None, current_request=None, history=None,
+              caller=None):
+        caller = caller or Caller(identity=f"local:{user}", ip="local")
         query = (query or "").strip()
         if not query:
             raise ServiceError("Type a cohort request first.")
+        if len(query) > MAX_QUERY_CHARS:
+            raise ServiceError(f"The request is longer than {MAX_QUERY_CHARS} characters.", 413)
         current = None
         if refine_search_id:
             s = self.db.get_search(user, refine_search_id)
@@ -218,27 +273,30 @@ class Service:
             current = {"request": current_request or (current or {}).get("request", ""),
                        "steps": [{k: v for k, v in st.items() if not str(k).startswith("_")}
                                  for st in current_steps if isinstance(st, dict) and not st.get("_off")]}
+        limit_note = None
         if use_ai and self.ai_status()["available"]:
-            with self._lock:
-                if self.ai_calls >= self.settings.ai_call_limit:
-                    raise ServiceError(f"This server has used its limit of {self.settings.ai_call_limit} model calls. "
-                                       "Restart it or raise COHORT_STUDIO_AI_CALL_LIMIT.", 429)
             try:
-                d = make_draft(query, self.store, self.client, current_spec=current, catalog=self.catalog, history=history)
+                self._ai_allowed(caller)
+            except ServiceError as exc:
+                if current:
+                    raise
+                limit_note = str(exc)              # over a limit: the built-in parser drafts instead, and says why
+        if use_ai and self.ai_status()["available"] and limit_note is None:
+            try:
+                d = make_draft(query, self.store, self.client, current_spec=current, catalog=self.catalog, history=history,
+                               compare_with_rules=True, interactive=True)
             except AIError as exc:
                 raise ServiceError(str(exc), 502)
             if current:
                 d["diff"] = diff_steps(current["steps"], materialize(d))
-            if not d.get("cached"):
-                with self._lock:
-                    self.ai_calls += 1
-                    for k in self.tokens:
-                        self.tokens[k] += int((d.get("usage") or {}).get(k, 0) or 0)
+            self._account(caller, d)
             mode = "ai"
         else:
             if current:
                 raise ServiceError("Refining a cohort needs the AI model. Use Advanced search or edit the steps instead.")
             d = draft_from_spec(parse_request(query, self.store), self.store, source="rules")
+            if limit_note:
+                d["warnings"].append(limit_note)
             mode = "rules"
         return self._save_draft(user, query, d, mode, refine_search_id)
 
@@ -262,22 +320,17 @@ class Service:
         except CompareError as exc:
             raise ServiceError(str(exc), 404 if "isn't" in str(exc) or "no saved" in str(exc) else 400)
 
-    def compare_insights(self, user, a, b):
+    def compare_insights(self, user, a, b, caller=None):
+        caller = caller or Caller(identity=f"local:{user}", ip="local")
         if not self.ai_status()["available"]:
             raise ServiceError("AI insights need a model. Add OPENAI_API_KEY to .env, or point OPENAI_BASE_URL at a local model.")
-        with self._lock:
-            if self.ai_calls >= self.settings.ai_call_limit:
-                raise ServiceError(f"This server has used its limit of {self.settings.ai_call_limit} model calls.", 429)
+        self._ai_allowed(caller)
         metrics = metrics_for_model(self.compare(user, a, b))
         try:
             out = ai_insights.generate(self.client, metrics)
         except AIError as exc:
             raise ServiceError(str(exc), 502)
-        if not out.get("cached"):
-            with self._lock:
-                self.ai_calls += 1
-                for k in self.tokens:
-                    self.tokens[k] += int((out.get("usage") or {}).get(k, 0) or 0)
+        self._account(caller, out)
         return out
 
     def advanced(self, user, form):
@@ -593,13 +646,13 @@ class Service:
             raise ServiceError("Not found.", 404)
         return {"deleted": fav_id}
 
-    def run_favorite(self, user, fav_id):
+    def run_favorite(self, user, fav_id, caller=None):
         f = self.db.get_favorite(user, fav_id)
         if not f:
             raise ServiceError("Not found.", 404)
         if f["spec"]:
             return {"kind": "result", "result": self.run(user, f["spec"], f["query"], mode="favourite")}
-        return {"kind": "draft", "draft": self.draft(user, f["query"])}
+        return {"kind": "draft", "draft": self.draft(user, f["query"], caller=caller)}
 
     def suggest(self, user, text):
         recent = self.db.recent_queries(user) + [f["query"] for f in self.db.list_favorites(user)]

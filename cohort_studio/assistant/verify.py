@@ -513,7 +513,7 @@ class Checker:
                 starts = [a for a in actual if a.lower().startswith(sv.lower())]
                 close = [by_lower[c] for c in difflib.get_close_matches(sv.lower(), list(by_lower), n=3, cutoff=0.75)]
                 inside = [a for a in actual if sv.lower() in a.lower()]
-                cands = list(dict.fromkeys(starts or close or inside))
+                cands = list(dict.fromkeys(starts or close or inside or _spelled_out(sv, actual)))
                 if not cands:
                     raise _Unsupported(sv, f"'{sv}' is not a value of {field} (values: {', '.join(actual[:10])}).")
                 if len(cands) > 1 and self.allow_questions and not in_any_of:
@@ -534,6 +534,19 @@ class Checker:
                                       "not recorded")
             cmp = "in_raw"
         return cmp, list(dict.fromkeys(fixed))
+
+
+def _spelled_out(written, actual):
+    """Stored values the written one spells out: the stored value is its first word ('Basal-like' -> Basal,
+    'HER2-enriched' -> Her2), or each written word starts with the matching part of it ('Luminal A' -> LumA)."""
+    words = [w for w in re.split(r"[\s\-_]+", written.lower()) if w]
+    out = []
+    for a in actual:
+        parts = [p.lower() for p in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", a)]
+        if words and (words[0] == a.lower()
+                      or (len(parts) == len(words) > 1 and all(w.startswith(p) for w, p in zip(words, parts)))):
+            out.append(a)
+    return out
 
 
 # ---------- assembling steps ----------

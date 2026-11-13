@@ -146,13 +146,24 @@ def _str(x, default=""):
     return str(x).strip() if x not in (None, "") else default
 
 
-def make_draft(request, store, client, current_spec=None, catalog=None, history=None):
-    """Ask the model for a draft and check it. Raises AIError if the model can't be reached or replies badly."""
+def make_draft(request, store, client, current_spec=None, catalog=None, history=None, compare_with_rules=False,
+               interactive=False):
+    """Ask the model for a draft and check it. Raises AIError if the model can't be reached or replies badly.
+
+    compare_with_rules: also draft the request with the built-in parser and keep the better draft or a mix
+    (reconcile.py; at most one extra model call, only when the two select different samples). interactive: the
+    user will answer the AI's questions, so a draft with open questions isn't compared."""
     catalog = catalog or Catalog.for_store(store)
     system, user = build_system(catalog), build_user(request, catalog, current_spec, history)
     data, usage, cached = client.complete_json(system, user)
     full = f"{current_spec['request']} | then: {request}" if current_spec and current_spec.get("request") else request
     draft = assemble(full, data, store, catalog, source=f"ai:{client.label}", typed=request)
+    if compare_with_rules and not current_spec:
+        from .reconcile import reconcile
+        draft, extra, extra_cached = reconcile(draft, data, store, client, catalog, interactive=interactive)
+        usage = {k: int((usage or {}).get(k, 0) or 0) + int((extra or {}).get(k, 0) or 0)
+                 for k in set(usage or {}) | set(extra or {})}
+        cached = cached and extra_cached
     draft.update(usage=usage, cached=cached, model=client.model, refines=bool(current_spec))
     return draft
 
@@ -336,13 +347,15 @@ def to_spec(draft, answers=None):
     notes += [a["reason"] for a in draft["auto_resolved"]]
     notes += [f"Assumed: {a}" for a in draft["assumptions"]]
     notes += [f"Not in this release: {u['phrase']}. {u['reason']}" for u in draft["unsupported"]]
+    notes += draft.get("review_notes", [])
     spec["notes"] = notes
     spec["unparsed"] = ([u["phrase"] for u in draft["unsupported"]] + draft["uncovered"]
                         + [c["question"] for c in chosen if c["answered_by"] == "default"])
     spec["understood"] = draft["mappings"]
     spec["assistant"] = {"source": draft["source"], "model": draft.get("model"), "interpretation": draft["interpretation"],
                          "answers": chosen, "corrections": draft["corrections"], "assumptions": draft["assumptions"],
-                         "unsupported": draft["unsupported"], "uncovered": draft["uncovered"]}
+                         "unsupported": draft["unsupported"], "uncovered": draft["uncovered"],
+                         "reconcile": draft.get("reconcile")}
     return spec
 
 

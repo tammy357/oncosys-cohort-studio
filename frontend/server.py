@@ -1,9 +1,17 @@
-"""Cohort Studio web app: an API over cohort_studio plus a single-page interface.
+"""Cohort Studio web app: an API over cohort_studio plus a single-page interface, and the hosted AI service.
 
 Run from the repository root:
     pip install -r frontend/requirements.txt
     python frontend/server.py            # http://127.0.0.1:8000
+
+The hosted AI service (for the CLI and scripts without their own key; cohort_studio/hosted.py is the client):
+    POST /api/v1/draft   {"request": "..."} -> {"spec", "problems", "model", "limits"}
+    GET  /api/v1/status  -> whether a model is configured, and the caller's limits today
+    POST /mcp            the MCP server for AI agents (backend/mcp_http.py)
+Send "Authorization: Bearer <token>" for a personal token's higher limit (tokens: COHORT_STUDIO_API_TOKENS in the
+server's environment). Every AI request, from any page or client, passes the limits in backend/limits.py.
 """
+import hmac
 import pathlib
 import re
 import sys
@@ -17,6 +25,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from frontend.backend.config import Settings  # noqa: E402
+from frontend.backend.limits import Caller, RequestRate  # noqa: E402
+from frontend.backend.mcp_http import add_mcp_routes  # noqa: E402
 from frontend.backend.service import Service, ServiceError  # noqa: E402
 from frontend.backend.storage import Storage  # noqa: E402
 
@@ -28,12 +38,48 @@ def _user(x_user):
     return user or "local"
 
 
+def _ip(request):
+    """The caller's address: the first X-Forwarded-For entry (Vercel and Render proxy every request), else the peer."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")
+    return re.sub(r"[^0-9A-Za-z.:-]", "", ip)[:64] or "unknown"
+
+
+def _caller(settings, request, authorization=None, x_user=None, need_token=False):
+    """Who is asking: a personal-token holder, or an address plus the browser's user id. A wrong token is refused."""
+    token = (authorization or "").removeprefix("Bearer ").removeprefix("bearer ").strip()
+    if token:
+        name = next((n for t, n in settings.api_tokens.items()
+                     if hmac.compare_digest(t.encode("utf-8"), token.encode("utf-8"))), None)
+        if name is None:
+            raise ServiceError("That API token isn't valid. Remove COHORT_STUDIO_API_TOKEN to use the shared limits, "
+                               "or ask the team for a token.", 401)
+        return Caller(identity=f"token:{name}", ip=_ip(request), token_name=name)
+    if need_token:
+        raise ServiceError("This service needs a personal token (COHORT_STUDIO_API_TOKEN). The built-in parser works "
+                           "without one.", 401)
+    return Caller(identity=f"anon:{_ip(request)}|{_user(x_user)}", ip=_ip(request))
+
+
 def create_app(settings=None, client=None, storage=None):
     settings = settings or Settings()
     storage = storage or Storage(settings.database_url)
     svc = Service(settings, storage, client=client)
     app = FastAPI(title="Cohort Studio", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.service = svc
+    rate = RequestRate(settings.requests_per_minute)
+
+    @app.middleware("http")
+    async def _protect_api(request: Request, call_next):
+        # Basic protection for a small server: a size cap on request bodies and a per-address request rate.
+        if (request.url.path.startswith("/api/") and request.url.path != "/api/health") or request.url.path == "/mcp":
+            length = request.headers.get("content-length", "")
+            if length.isdigit() and int(length) > settings.max_body_bytes:
+                return JSONResponse({"error": "That request is too large."}, status_code=413)
+            if not rate.allow(_ip(request)):
+                return JSONResponse({"error": "Too many requests from this address; wait a minute and try again."},
+                                    status_code=429)
+        return await call_next(request)
 
     @app.middleware("http")
     async def _revalidate_assets(request: Request, call_next):
@@ -60,10 +106,24 @@ def create_app(settings=None, client=None, storage=None):
         return {"suggestions": svc.suggest(_user(x_user), q)}
 
     @app.post("/api/draft")
-    def draft(body: dict = Body(...), x_user: str = Header(None)):
+    def draft(request: Request, body: dict = Body(...), x_user: str = Header(None)):
         return svc.draft(_user(x_user), body.get("query", ""), use_ai=body.get("use_ai", True),
                          refine_search_id=body.get("refine_search_id"), current_steps=body.get("current_steps"),
-                         current_request=body.get("current_request"), history=body.get("history"))
+                         current_request=body.get("current_request"), history=body.get("history"),
+                         caller=_caller(settings, request, x_user=x_user))
+
+    @app.post("/api/v1/draft")
+    def v1_draft(request: Request, body: dict = Body(...), authorization: str = Header(None)):
+        caller = _caller(settings, request, authorization, need_token=settings.require_token)
+        return svc.api_draft(caller, body.get("request") or body.get("query") or "")
+
+    @app.get("/api/v1/status")
+    def v1_status(request: Request, authorization: str = Header(None)):
+        return svc.api_status(_caller(settings, request, authorization, need_token=settings.require_token))
+
+    # The MCP server for AI agents (cohort_studio/mcp_server.py over streamable HTTP), same callers and limits.
+    add_mcp_routes(app, svc, lambda request, authorization: _caller(settings, request, authorization,
+                                                                     need_token=settings.require_token))
 
     @app.post("/api/preview")
     def preview(body: dict = Body(...)):
@@ -98,8 +158,9 @@ def create_app(settings=None, client=None, storage=None):
         return svc.compare(_user(x_user), a, b)
 
     @app.post("/api/compare/insights")
-    def compare_insights(body: dict = Body(...), x_user: str = Header(None)):
-        return svc.compare_insights(_user(x_user), body.get("a"), body.get("b"))
+    def compare_insights(request: Request, body: dict = Body(...), x_user: str = Header(None)):
+        return svc.compare_insights(_user(x_user), body.get("a"), body.get("b"),
+                                    caller=_caller(settings, request, x_user=x_user))
 
     @app.post("/api/drafts/{draft_id}/resolve")
     def resolve(draft_id: str, body: dict = Body(...), x_user: str = Header(None)):
@@ -148,8 +209,8 @@ def create_app(settings=None, client=None, storage=None):
         return svc.delete_favorite(_user(x_user), fav_id)
 
     @app.post("/api/favorites/{fav_id}/run")
-    def run_favorite(fav_id: int, x_user: str = Header(None)):
-        return svc.run_favorite(_user(x_user), fav_id)
+    def run_favorite(request: Request, fav_id: int, x_user: str = Header(None)):
+        return svc.run_favorite(_user(x_user), fav_id, caller=_caller(settings, request, x_user=x_user))
 
     @app.get("/")
     def index():

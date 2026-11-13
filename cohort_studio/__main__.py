@@ -1,27 +1,40 @@
-"""Command line: python -m cohort_studio "primary tumors with RNA and protein data and a diagnostic slide"
+"""Command line: build a TCGA-BRCA cohort from a plain-English request or a cohort definition.
 
-Prints every step (rows, samples, patients, inflation), fixes inflating joins unless --no-fix,
-prints the verdict, and writes cohort_samples.csv plus the other exports to --out.
+    python -m cohort_studio "primary tumors with RNA and protein data and a diagnostic slide"
+    python -m cohort_studio --spec output/cohort_spec.json       # a definition (JSON steps), run exactly as written
+    python -m cohort_studio --file my_cohorts.json               # one or many requests/definitions from a file
+
+Requests are drafted by AI when it's available: your own key or local model (environment or .env), otherwise the
+hosted Cohort Studio service, otherwise the built-in parser (--rules uses only the parser; --no-hosted never sends
+the request to the hosted service). Prints every step (rows, samples, patients, inflation), fixes inflating joins
+unless --no-fix, prints the verdict, and writes cohort_samples.csv plus a reproduce script and the other exports to
+--out (one sub-folder per cohort for --file).
 """
 import argparse
+import csv
 import json
+import pathlib
 import sys
 
-from . import engine, exports, verdict
+from . import exports
+from .api import as_query, build_cohort, folder_name, load_queries
 from .data import DataStore
-from .parse import parse_request
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m cohort_studio", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("request", nargs="?", help="the cohort you want, in plain English")
-    ap.add_argument("--spec", help="run a saved cohort_spec.json instead of a request")
+    ap.add_argument("--spec", help="run a cohort definition (e.g. a saved cohort_spec.json) exactly as written")
+    ap.add_argument("--file", help="a .txt (one request per line) or .json file (one or many requests/definitions)")
     ap.add_argument("--data-dir", help="folder with sample_manifest.csv (default: data/tcga-brca)")
     ap.add_argument("--out", default="output", help="folder for cohort_samples.csv and the other exports")
     ap.add_argument("--no-fix", action="store_true", help="don't fix inflating joins (shows the problem only)")
     ap.add_argument("--accept-unparsed", action="store_true", help="confirm that unused words don't change the cohort")
-    ap.add_argument("--ai", choices=["anthropic", "openai"], help="draft the steps with an AI model (your own key or a local model)")
+    ap.add_argument("--rules", action="store_true", help="built-in parser only: no AI, nothing leaves this computer")
+    ap.add_argument("--no-hosted", action="store_true", help="your own key or local model only, never the hosted service")
+    ap.add_argument("--ai", choices=["anthropic", "openai"], help="which provider your own key is for (default: "
+                                                                    "whichever key is set)")
     ap.add_argument("--team", default="Cohort Studio team", help="team name for findings.json")
     ap.add_argument("--fields", action="store_true", help="list the fields and values available in this release")
     args = ap.parse_args(argv)
@@ -30,42 +43,62 @@ def main(argv=None):
     if args.fields:
         return list_fields(store)
     if args.spec:
-        spec = json.load(open(args.spec))
+        queries = [json.load(open(args.spec, encoding="utf-8-sig"))]
+    elif args.file:
+        queries = load_queries(args.file)
     elif args.request:
-        spec = None
-        if args.ai:
-            from .llm import AIUnavailable, ai_parse
-            try:
-                spec, problems = ai_parse(args.request, store, provider=args.ai)
-                if problems:
-                    print("AI draft has problems, using the built-in parser instead:", problems)
-                    spec = None
-            except AIUnavailable as exc:
-                print(exc)
-        spec = spec or parse_request(args.request, store)
+        queries = [args.request]
     else:
         ap.print_help()
         return 2
-    if args.accept_unparsed:
-        spec["unparsed_confirmed"] = True
+    options = {"ai": "off" if args.rules else "own" if args.no_hosted else "auto", "provider": args.ai,
+               "fix": not args.no_fix, "accept_unparsed": args.accept_unparsed, "team": args.team}
+    if len(queries) == 1:
+        run = build_cohort(queries[0], out_dir=args.out, store=store, log=print, **options)
+        report(run, store)
+        return 0 if run.ok else 1
+    rows = []
+    for i, query in enumerate(queries, 1):
+        try:
+            as_query(query)
+        except ValueError as exc:
+            print(f"\n#{i}: skipped ({exc})")
+            rows.append({"#": i, "request": str(query)[:80], "error": str(exc)})
+            continue
+        print(f"\n{'=' * 100}\n#{i} of {len(queries)}")
+        run = build_cohort(query, out_dir=f"{args.out}/{folder_name(i, query)}", store=store, log=print, **options)
+        report(run, store)
+        rows.append({"#": i, "request": run.request, "samples": run.n_samples,
+                     "patients": run.result.final_patients if run.ok else "", "verdict": run.verdict.verdict,
+                     "drafted by": run.route["label"], "folder": str(run.out_dir), "error": "" if run.ok else "step failed"})
+    pathlib.Path(args.out).mkdir(parents=True, exist_ok=True)
+    with open(f"{args.out}/summary.csv", "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["#", "request", "samples", "patients", "verdict", "drafted by", "folder",
+                                                "error"])
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\n{'=' * 100}\n{len(rows)} cohorts; summary in {args.out}/summary.csv")
+    for r in rows:
+        print(f"  #{r['#']:<3} {str(r.get('samples', '')):>5} samples  {r.get('verdict', '') or r['error']:<22} {r['request'][:60]}")
+    return 0 if all(not r["error"] for r in rows) else 1
 
+
+def report(run, store):
+    spec, result = run.spec, run.result
     print(f"\nRequest: {spec.get('request', '')}")
+    print(f"Drafted by: {run.route['label']}")
     for note in spec.get("notes", []):
         print(f"  note: {note}")
     if spec.get("unparsed"):
         print(f"  not used: {', '.join(spec['unparsed'])}")
-
-    result = engine.run(spec, store)
-    print_ledger(result)
-    if any(s.inflated for s in result.steps) and not args.no_fix:
-        spec, changes = engine.apply_fixes(spec, result)
+    print_ledger(run.first_result)
+    if run.fixes:
         print("\nFixed the join inflation:")
-        for c in changes:
+        for c in run.fixes:
             print(f"  - {c}")
-        result = engine.run(spec, store)
         print_ledger(result)
 
-    v = verdict.evaluate(result, store)
+    v = run.verdict
     print(f"\nVERDICT: {v.verdict}\n  {v.reason}")
     for c in v.checks:
         print(f"  [{c.status:^7}] {c.name}: {c.detail}")
@@ -83,12 +116,11 @@ def main(argv=None):
         well = int((cov["recorded %"] >= 80).sum())
         print(f"\nRecorded for this cohort: {well} of {len(cov)} clinical and survival variables have a value for at "
               f"least 80% of its samples (full list in coverage.csv).")
-
-    out = exports.write_all(result, v, store, args.out, team=args.team)
-    print(f"\nWrote {len(result.cohort_ids)} samples to {out / 'cohort_samples.csv'} "
+    if not result.ok:
+        print("\n!! A step failed, so cohort_samples.csv is empty. Fix the step (see above) and run again.")
+    print(f"\nWrote {len(result.cohort_ids)} samples to {run.out_dir / 'cohort_samples.csv'} "
           f"(plus reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv, sample_selection.csv, "
           f"coverage.csv, verdict.json, findings.json)")
-    return 0
 
 
 def print_ledger(result):

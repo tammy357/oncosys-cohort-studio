@@ -25,6 +25,7 @@ The AI assistant reads `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) from the enviro
 | `COHORT_STUDIO_PROVIDER` | `openai` | `openai` (any OpenAI-compatible endpoint) or `anthropic` |
 | `OPENAI_BASE_URL` | OpenAI | A local model instead, e.g. `http://localhost:11434/v1` (Ollama; no key or cost) |
 | `COHORT_STUDIO_AI_CALL_LIMIT` | `200` | Paid model calls allowed per server run (protects a low-balance key) |
+| `COHORT_STUDIO_DAILY_BUDGET_USD` and the other daily limits | `4`, ... | Every AI request's limits, stored in the database; see [Running the hosted AI service](../README.md#running-the-hosted-ai-service) |
 | `COHORT_STUDIO_MAX_OUTPUT_TOKENS` | `1800` | Cap on each reply |
 | `COHORT_STUDIO_REASONING_EFFORT` | `low` | For gpt-5 / o-series models |
 | `DATABASE_URL` | `sqlite:///frontend/.data/cohort_studio.db` | Where searches and favourites are stored |
@@ -41,7 +42,10 @@ docker run -d --name cohort-db -e POSTGRES_USER=cohort -e POSTGRES_PASSWORD=coho
 DATABASE_URL=postgresql+psycopg://cohort:cohort@localhost:5432/cohort_studio python frontend/server.py
 ```
 
-Tables are created on first start: `users`, `searches`, `favorites`, `drafts`, `llm_cache`, `versions`.
+Tables are created on first start: `users`, `searches`, `favorites`, `drafts`, `llm_cache`, `versions`, `ai_usage`.
+
+The same server is the hosted AI service for the command line and scripts (`POST /api/v1/draft`,
+`GET /api/v1/status`); see [Running the hosted AI service](../README.md#running-the-hosted-ai-service).
 
 ### Deploying: pages on Vercel, API on Render
 
@@ -54,8 +58,9 @@ forwards every `/api/...` request to the backend, so the browser talks to one ad
 - **Render (backend):** a Python web service from the repository root.
   Build: `pip install pandas fastapi uvicorn sqlalchemy "psycopg[binary]" && python data/tcga-brca/fetch.py --no-rna`.
   Start: `uvicorn frontend.server:create_app --factory --host 0.0.0.0 --port $PORT`.
-  Environment: `OPENAI_API_KEY` (secret), `DATABASE_URL` (Postgres; a free instance's disk is wiped when it sleeps),
-  optionally `COHORT_STUDIO_MODEL` and `COHORT_STUDIO_AI_CALL_LIMIT`.
+  Environment: `OPENAI_API_KEY` (secret), `DATABASE_URL` (Postgres; a free instance's disk is wiped when it sleeps,
+  and the AI usage counts live there), optionally `COHORT_STUDIO_MODEL`, `COHORT_STUDIO_AI_CALL_LIMIT`, the daily
+  limits and `COHORT_STUDIO_API_TOKENS` (secret).
 - The server needs about 210 MB of memory at peak (the mutation calls are held as 1-byte integers), so a 512 MB
   instance is enough. A sleeping free instance takes about a minute to wake; the pages say so and retry.
 
