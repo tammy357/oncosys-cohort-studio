@@ -26,23 +26,79 @@ see who the steps removed and get a verdict → export `cohort_samples.csv` and 
 
 ---
 
-## Run it (from a fresh clone)
+## Quick start (from a fresh clone, about 5 minutes)
+
+Tested with Python 3.13 and 3.14 on macOS and Linux. On some systems the command is `python3` instead of `python`.
+
+**1. Get the code and a clean environment**
 
 ```bash
-pip install -r requirements.txt
-python data/tcga-brca/fetch.py --no-rna      # downloads the frozen release and checks every checksum
-streamlit run app.py                          # the app
+git clone https://github.com/tammy357/oncosys-cohort-studio.git
+cd oncosys-cohort-studio
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 ```
 
-Or from the command line, which is handy for a judge's new request:
+**2. Install.** Cohort Studio only needs a few packages:
+
+```bash
+pip install "pandas>=2.0" matplotlib jsonschema "streamlit>=1.50" pytest
+```
+
+(`pip install -r requirements.txt` also works and adds the organizers' notebook and imaging packages, which
+Cohort Studio doesn't use. It can take around 10 minutes.)
+
+**3. Download the frozen data** (about 5 MB, needs internet access):
+
+```bash
+python data/tcga-brca/fetch.py --no-rna
+```
+
+Every file should end with `ok`. This checks each download against the event's frozen checksums.
+
+**4. Run the brief's demo request from the command line** (this is the path a judge's new request takes):
 
 ```bash
 python -m cohort_studio "primary tumors with both RNA and protein data and a diagnostic slide"
-# writes output/cohort_samples.csv, reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv,
-#        sample_selection.csv, coverage.csv, verdict.json and findings.json
-python -m cohort_studio --fields              # which fields and values exist in this release
-python -m pytest tests -q                     # tests (synthetic fixture + the real manifests)
 ```
+
+You should see step 4 flagged (`776` rows for `731` samples), the fix applied, then:
+
+```
+VERDICT: Conditional
+...
+Wrote 731 samples to output/cohort_samples.csv (plus reproduce_cohort.py, cohort_spec.json, ...)
+```
+
+The cohort is in `output/cohort_samples.csv` (one `sample_id` per row, no duplicates). Any plain-English request
+works the same way, for example `python -m cohort_studio "ER-positive tumors"` (808 samples, Ready).
+
+**5. Open the app**
+
+```bash
+streamlit run app.py
+```
+
+It opens in your browser. Click the first example, then **Draft the steps** → **Run the steps** →
+**Apply this fix to step 4**, and the verdict changes from Blocked to Conditional.
+
+**Other useful commands**
+
+```bash
+python -m cohort_studio --fields                     # which fields and values exist in this release
+python output/reproduce_cohort.py data/tcga-brca output/rebuilt.csv   # rebuild a saved cohort from the files
+python format/validate.py output/findings.json       # check findings.json against the shared format
+python -m pytest tests -q                            # tests (synthetic fixture + the real manifests)
+```
+
+### If something goes wrong
+
+- **`fetch.py` fails with a connection error:** your network may block the download hosts. Requests that only use
+  sample types, data layers and slides still work from the committed manifests. Clinical, survival and mutation
+  filters will say **Insufficient Evidence** and name the missing file, rather than guessing.
+- **`ModuleNotFoundError`:** the virtual environment isn't active. Run `source .venv/bin/activate` again, then retry.
+- **`streamlit: command not found`:** use `python -m streamlit run app.py`.
+- **Port already in use:** `streamlit run app.py --server.port 8502`.
 
 A conversational web app with AI questions, autocomplete, saved searches and favourites is in
 [frontend/](frontend/README.md): `pip install -r frontend/requirements.txt`, then `python frontend/server.py`.
