@@ -47,22 +47,30 @@ Tables are created on first start: `users`, `searches`, `favorites`, `drafts`, `
 The same server is the hosted AI service for the command line and scripts (`POST /api/v1/draft`,
 `GET /api/v1/status`); see [Running the hosted AI service](../README.md#running-the-hosted-ai-service).
 
-### Deploying: pages on Vercel, API on Render
+### Deploying: pages on Vercel, API on AWS
 
 The pages in `frontend/static/` are plain files (no build step). `frontend/static/vercel.json` serves them and
 forwards every `/api/...` request to the backend, so the browser talks to one address (no CORS).
 
 - **Vercel:** import the repository, set *Root Directory* to `frontend/static` and *Framework Preset* to "Other",
-  leave the build settings empty. The backend address is the `/api/:path*` line in `vercel.json`; change it if your
-  Render service has a different URL.
-- **Render (backend):** a Python web service from the repository root.
-  Build: `pip install pandas fastapi uvicorn sqlalchemy "psycopg[binary]" && python data/tcga-brca/fetch.py --no-rna`.
-  Start: `uvicorn frontend.server:create_app --factory --host 0.0.0.0 --port $PORT`.
-  Environment: `OPENAI_API_KEY` (secret), `DATABASE_URL` (Postgres; a free instance's disk is wiped when it sleeps,
-  and the AI usage counts live there), optionally `COHORT_STUDIO_MODEL`, `COHORT_STUDIO_AI_CALL_LIMIT`, the daily
-  limits and `COHORT_STUDIO_API_TOKENS` (secret).
-- The server needs about 210 MB of memory at peak (the mutation calls are held as 1-byte integers), so a 512 MB
-  instance is enough. A sleeping free instance takes about a minute to wake; the pages say so and retry.
+  leave the build settings empty. The backend address is the `/api/:path*` line in `vercel.json`
+  (`https://api.maplestreettax.site`); change it if the backend moves.
+- **AWS (backend):** one Ubuntu 24.04 EC2 server (t3.micro, 1 GB RAM, 2 GB swap) with an Elastic IP. The DNS record
+  `api.maplestreettax.site` (Cloudflare, "DNS only", not proxied) points at it.
+  - **App:** a systemd service `oncosys` runs
+    `.venv/bin/uvicorn frontend.server:create_app --factory --host 127.0.0.1 --port 8000` from `~/oncosys-cohort-studio`.
+    Install: `pip install pandas fastapi uvicorn sqlalchemy "psycopg[binary]"`, then
+    `python data/tcga-brca/fetch.py --no-rna`.
+  - **HTTPS:** Caddy (`/etc/caddy/Caddyfile`) gets and renews the certificate and proxies to `127.0.0.1:8000`. Its
+    `trusted_proxies` setting keeps the `X-Forwarded-For` chain, so the per-address limits still see each visitor.
+  - **Settings:** `~/oncosys.env` (mode 600, loaded by the service): `OPENAI_API_KEY` (secret), optionally
+    `COHORT_STUDIO_MODEL`, `COHORT_STUDIO_AI_CALL_LIMIT`, the daily limits and `COHORT_STUDIO_API_TOKENS` (secret), and
+    `DATABASE_URL=sqlite:////home/ubuntu/oncosys-data/cohort_studio.db`. The server's disk is permanent, so SQLite is
+    enough; the AI usage counts live there. The file must use Unix line endings.
+  - **Update:** nothing deploys on push. On the server run `~/update.sh` (`git pull`, re-run `fetch.py`,
+    `sudo systemctl restart oncosys`). Logs: `sudo journalctl -u oncosys -f`.
+- The server needs about 210 MB of memory at peak (the mutation calls are held as 1-byte integers), so a 1 GB
+  instance with swap is plenty. It never sleeps, so there is no cold start.
 
 ## What it does
 

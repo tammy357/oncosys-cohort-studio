@@ -1,7 +1,7 @@
 """An MCP server, so AI agents (Claude, Cursor, any MCP client) can build TCGA-BRCA cohorts with Cohort Studio.
 
 Two ways to connect:
-  hosted, nothing to install: add https://oncosys-cohort-studio.onrender.com/mcp as a remote MCP server
+  hosted, nothing to install: add https://api.maplestreettax.site/mcp as a remote MCP server
       (streamable HTTP; optional "Authorization: Bearer <token>" for a personal token's higher limit). Plain-English
       requests are drafted by the service's model within its daily limits, else by the built-in parser.
   local, from a clone (runs on your copy of the data):   python -m cohort_studio.mcp_server

@@ -39,7 +39,7 @@ def _user(x_user):
 
 
 def _ip(request):
-    """The caller's address: the first X-Forwarded-For entry (Vercel and Render proxy every request), else the peer."""
+    """The caller's address: the first X-Forwarded-For entry (Vercel and Caddy proxy every request), else the peer."""
     forwarded = request.headers.get("x-forwarded-for", "")
     ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")
     return re.sub(r"[^0-9A-Za-z.:-]", "", ip)[:64] or "unknown"

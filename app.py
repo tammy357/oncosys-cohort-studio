@@ -120,7 +120,7 @@ request = st.text_area("Cohort in plain English", key="request", height=70,
 if st.button("Draft the steps", type="primary", disabled=not request.strip()):
     from cohort_studio.llm import draft_spec
     own = bool(api_key or base_url)
-    with st.spinner("Drafting the steps (the hosted AI service can take up to a minute to wake up)..."):
+    with st.spinner("Drafting the steps..."):
         spec, route = draft_spec(request, store, ai="auto" if use_ai else "off", provider=provider if own else None,
                                  api_key=api_key or None, model=model or None, base_url=base_url or None)
     st.session_state.route = route

@@ -56,12 +56,12 @@ export async function api(path, { method = 'GET', body } = {}) {
 }
 
 /**
- * /api/meta, patiently. A free-tier server that went to sleep takes about a minute to wake, so after a short wait a
- * "waking up" note appears, and failed attempts (a 502/504 while it starts) are retried before giving up.
+ * /api/meta, patiently. While the server restarts (for example during an update) it can answer 502/504 for a few
+ * seconds, so after a short wait a "reconnecting" note appears, and failed attempts are retried before giving up.
  */
 export async function loadMeta() {
   const note = h('div', { class: 'waking', role: 'status', hidden: true }, h('span', { class: 'waking-dot' }),
-    h('span', {}, h('b', {}, 'Waking up the server. '), 'Free hosting sleeps when nobody has used it for a while; this can take up to a minute.'));
+    h('span', {}, h('b', {}, 'Reconnecting to the server. '), 'It may be restarting after an update; this usually takes a few seconds.'));
   document.body.append(note);
   const slow = setTimeout(() => { note.hidden = false; }, 2500);
   try {

@@ -887,7 +887,7 @@ details.c-fold:not([open]) > summary { margin-bottom: 0; }
 .ins-check svg { width: 13px; height: 13px; }
 .ins-check.ok { color: var(--ok); } .ins-check.warn { color: var(--warn); }
 
-/* shown while a sleeping free-tier server wakes up */
+/* shown while the server is slow to answer or restarting */
 .waking { position: fixed; z-index: 95; top: 76px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
   max-width: min(560px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 12px; background: var(--card-hi); border: 1px solid var(--rule-2);
   box-shadow: var(--shadow-pop); font-size: 13.5px; color: var(--ink-2); animation: pop .2s var(--ease) both; }

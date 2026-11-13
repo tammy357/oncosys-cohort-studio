@@ -9,7 +9,8 @@ Every AI request (web drafts, comparison insights and the /api/v1 service the CL
   every caller gets the built-in parser until 00:00 UTC.
 Counts live in the database, so a restart doesn't reset them. The budget is the hard stop; the per-caller limits
 keep one honest caller from using it all. They are not proof against abuse: an anonymous caller's address comes from
-X-Forwarded-For, which Render extends rather than replaces, so a client calling Render directly can fake it (and the
+X-Forwarded-For, which the server's proxy (Caddy) extends rather than replaces, so a client calling the server directly
+can fake it (and the
 user id). Tokens plus COHORT_STUDIO_REQUIRE_TOKEN close /api/v1 and /mcp; a model-provider spending limit is still
 worth setting as a second guard.
 """
