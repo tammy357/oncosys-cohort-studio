@@ -200,7 +200,7 @@ No model is trained, so no model card is needed.
 
 ### Run with a hosted model (your own key)
 
-The most accurate option, and nothing to install: the AI step calls the provider directly. You need your own API
+Likely more accurate than a small local model (we haven't measured it on the held-out set yet), and nothing to install: the AI step calls the provider directly. You need your own API
 key from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/api-keys), and each
 request costs a small amount on that key.
 
@@ -293,7 +293,7 @@ ollama ps          # PROCESSOR should say 100% GPU
   [`cohort_studio/assistant/client.py`](cohort_studio/assistant/client.py#L54C100-L54C102)); the
   built-in parser then drafts the steps and the app says so.
 - On the 20 held-out benchmark cases it got 9 exactly right. It's a small model; a hosted model (with your own
-  key) is more accurate.
+  key) is likely more accurate, though we haven't measured one on the held-out set yet.
 
 > [!CAUTION]
 > In our tests its most common mistake was adding a step nobody asked for (for example "no protein data"), which
