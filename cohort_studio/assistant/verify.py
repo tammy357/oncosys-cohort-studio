@@ -570,6 +570,11 @@ def canonicalize(steps):
     steps = [s for s in steps if s]
     seen, uniq = set(), []
     for s in steps:
+        if (isinstance(s.get("value"), list) and s.get("cmp") in ("in", "not_in", "in_raw", "stage_in")
+                and all(isinstance(v, (str, int, float)) for v in s["value"])):
+            values = list(dict.fromkeys(s["value"]))
+            if len(values) < len(s["value"]):
+                s = {**s, "value": values}       # the same value listed twice says nothing more
         if _key(s) not in seen:
             seen.add(_key(s))
             uniq.append(s)

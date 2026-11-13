@@ -384,7 +384,9 @@ class Catalog:
         """Facts about the release that are the same for every request (kept first, so providers can cache it)."""
         lines = ["DATA: the event's frozen TCGA-BRCA release. Counts are primary tumours unless stated."]
         lines.append("SAMPLE TYPES (all samples): " + " | ".join(f"{t} {n}" for t, n in self.sample_type_counts.items())
-                     + (". Every patient has exactly one primary tumour." if self.one_primary_per_patient else ""))
+                     + (". Every patient has exactly one primary tumour." if self.one_primary_per_patient else "")
+                     + ". Every sample comes from a breast-cancer patient: Solid Tissue Normal is normal tissue taken "
+                       "next to the tumour, and there are no samples from people without cancer.")
         lines.append("DATA LAYERS L: " + " | ".join(f"{k} {n}" for k, n in self.layer_counts.items()))
         lines.append("SLIDE KINDS (primary tumours with at least one): "
                      + " | ".join(f"{k} {n}" for k, n in self.slide_sample_counts.items()))

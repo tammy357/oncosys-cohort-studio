@@ -151,7 +151,8 @@ class CohortTools:
         spec, route = self.drafter(request)
         out = {"drafted_by": route["label"], "definition": _jsonable(spec),
                "steps_in_words": [describe_step(s) for s in spec["steps"]], "notes": spec.get("notes", []),
-               "unused_words": spec.get("unparsed", []), "problems": [m for _, m in validate(spec, self.store)]}
+               "unused_words": spec.get("unparsed", []), "unconfirmed_readings": spec.get("unconfirmed", []),
+               "problems": [m for _, m in validate(spec, self.store)]}
         return out, json.dumps(out, indent=1)
 
     def build_cohort(self, request=None, definition=None, include_sample_ids=True):
@@ -176,7 +177,8 @@ class CohortTools:
                                        for s in run.first_result.steps if s.inflated],
                "checks": [{"name": c.name, "status": c.status, "detail": c.detail} for c in v.checks],
                "human_review": v.human_review, "notes": run.spec.get("notes", []),
-               "unused_words": run.spec.get("unparsed", []), "definition": _jsonable(run.spec)}
+               "unused_words": run.spec.get("unparsed", []),
+               "unconfirmed_readings": run.spec.get("unconfirmed", []), "definition": _jsonable(run.spec)}
         if include_sample_ids:
             out["sample_ids"] = run.sample_ids
         text = {k: v for k, v in out.items() if k not in ("sample_ids", "definition")}

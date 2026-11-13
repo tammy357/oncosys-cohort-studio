@@ -611,7 +611,8 @@ class Service:
                                                                   "patient_id"].nunique())},
                 "steps": steps, "overall_shift": overall, "verdict": v.to_dict(), "shift_threshold": verdict.SHIFT_WARN,
                 "exportable": exportable, "export_block_reason": block, "files": list(FILES),
-                "unparsed": spec.get("unparsed", []), "unparsed_confirmed": bool(spec.get("unparsed_confirmed")),
+                "unparsed": spec.get("unparsed", []), "unconfirmed": spec.get("unconfirmed", []),
+                "unparsed_confirmed": bool(spec.get("unparsed_confirmed")),
                 "notes": spec.get("notes", []), "assistant": spec.get("assistant"),
                 "cohort_ids": list(result.cohort_ids)}
 

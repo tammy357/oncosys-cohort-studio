@@ -679,14 +679,21 @@ function renderResult(res) {
     alerts.append(alertBar('info', 'check-check', `Your edits were checked against the data: ${res.rechecked.length} value${res.rechecked.length > 1 ? 's' : ''} tidied.`,
       res.rechecked.map(c => `${c.from} → ${c.to}: ${c.why}`).join('\n')));
   }
-  if (res.unparsed && res.unparsed.length && !res.unparsed_confirmed) {
-    const ok = h('button', { class: 'btn small', onclick: async e => {
-      e.currentTarget.disabled = true;
-      try { const r = await api(`/api/searches/${res.search_id}/confirm`, { method: 'POST' }); replaceResult(box, r); toast('Confirmed'); refreshHistory(); }
-      catch (err) { errorToast(err.message); }
-    } }, 'They don’t change it');
-    alerts.append(alertBar('warn', 'message-circle-question', `Not turned into steps: “${res.unparsed.join('”, “')}”.`,
-      'These words of the request were not turned into steps. Check they don’t change who should be in the cohort, or edit the steps.', ok));
+  const confirmButton = label => h('button', { class: 'btn small', onclick: async e => {
+    e.currentTarget.disabled = true;
+    try { const r = await api(`/api/searches/${res.search_id}/confirm`, { method: 'POST' }); replaceResult(box, r); toast('Confirmed'); refreshHistory(); }
+    catch (err) { errorToast(err.message); }
+  } }, label);
+  const unparsed = (res.unparsed || []), unconfirmed = (res.unconfirmed || []);
+  if (unparsed.length && !res.unparsed_confirmed) {
+    alerts.append(alertBar('warn', 'message-circle-question', `Not turned into steps: “${unparsed.join('”, “')}”.`,
+      'These words of the request were not turned into steps. Check they don’t change who should be in the cohort, or edit the steps.',
+      confirmButton('They don’t change it')));
+  }
+  if (unconfirmed.length && !res.unparsed_confirmed) {
+    alerts.append(alertBar('warn', 'message-circle-question', `Not confirmed: ${unconfirmed.join('; ')}.`,
+      'These parts of the request could be read more than one way, and nobody has confirmed the reading the steps use. Edit the steps if you meant another.',
+      ...(unparsed.length && !res.unparsed_confirmed ? [] : [confirmButton('That’s what I meant')])));
   }
   for (const st of res.steps.filter(x => x.inflated)) {
     const ex = (st.duplicate_examples || []).slice(0, 3).map(e => `${e.sample_id} appears ${e.rows} times`);
@@ -740,6 +747,7 @@ function resultToasts(res) {
   if (infl.length) warnToast(`Step ${infl[0].index + 1} counts samples more than once. Export is paused until it's fixed.`);
   else if (res.verdict.verdict === 'Blocked') errorToast(`Blocked: ${(res.verdict.checks.find(c => c.status === 'fail') || {}).name || 'see the checks'}.`);
   else if (res.unparsed && res.unparsed.length && !res.unparsed_confirmed) warnToast('Part of the request wasn’t turned into steps. Please check it.');
+  else if (res.unconfirmed && res.unconfirmed.length && !res.unparsed_confirmed) warnToast('Part of the request could be read more than one way. Please confirm the reading.');
 }
 function showResult(panel, res) {
   setPanel(panel, renderResult(res));

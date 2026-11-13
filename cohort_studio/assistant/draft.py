@@ -182,7 +182,7 @@ def assemble(request, data, store, catalog=None, source="ai", typed=None):
     assumptions = [_str(a.get("text") if isinstance(a, dict) else a) for a in _as_list(data.get("assumptions")) if a]
     mappings = [{"phrase": _str(m.get("phrase")), "meaning": _str(m.get("meaning"))}
                 for m in _as_list(data.get("mappings")) if isinstance(m, dict) and m.get("phrase")]
-    questions = []
+    questions, unconfirmed = [], []
     for n, q in enumerate([q for q in _as_list(data.get("clarifications")) if isinstance(q, dict)][:3], 1):
         options, dropped = [], []
         for o in _as_list(q.get("options")):
@@ -190,8 +190,11 @@ def assemble(request, data, store, catalog=None, source="ai", typed=None):
                 continue
             label = _str(o.get("label"), f"Option {len(options) + 1}")
             sub = Checker(store, catalog, allow_questions=False)
-            o_steps = sub.check_steps(_as_list(o.get("steps")))
-            if sub.unsupported or not o_steps:
+            given = _as_list(o.get("steps"))
+            o_steps = sub.check_steps(given)
+            # An answer written with no steps is a real answer ("leave it out", "no stand-in"); one whose steps
+            # were all removed by the checks is not.
+            if sub.unsupported or (given and not o_steps):
                 dropped.append({"label": label, "reason": "; ".join(u["reason"] for u in sub.unsupported)
                                 or "no runnable steps"})
                 continue
@@ -202,9 +205,11 @@ def assemble(request, data, store, catalog=None, source="ai", typed=None):
         if len(options) >= 2:
             questions.append(q_out)
         elif len(options) == 1:
+            # The model wanted to ask; the one answer that runs is used, but nobody chose it.
             base = merge(base, options[0]["steps"])
-            assumptions.append(f"{q_out['question']} Only one answer can run on this release, so it was used: "
-                               f"{options[0]['label']}.")
+            unconfirmed.append({"phrase": q_out["phrase"] or q_out["question"], "source": "ai",
+                                "read_as": f"{options[0]['label']} (the only answer to '{q_out['question']}' that "
+                                           "runs on this release)"})
         else:
             unsupported.append({"phrase": q_out["phrase"] or q_out["question"], "alternative": None, "source": "check",
                                 "reason": "None of the suggested answers can run on this release: "
@@ -212,6 +217,10 @@ def assemble(request, data, store, catalog=None, source="ai", typed=None):
     questions += chk.questions
     corrections += chk.corrections
     unsupported += chk.unsupported
+    # A step that is one of a question's answers belongs to that answer only (rule 4 of the prompt): left in the base
+    # steps too, it would be applied whichever answer is picked, and every other answer would be counted with it.
+    answer_keys = {json.dumps(s, sort_keys=True) for q in questions for o in q["options"] for s in o["steps"]}
+    base = [s for s in base if json.dumps(s, sort_keys=True) not in answer_keys]
     base, sanity = _sanity_questions(request, base)
     questions += sanity
     base, notes = canonicalize(base)
@@ -220,7 +229,7 @@ def assemble(request, data, store, catalog=None, source="ai", typed=None):
     draft = {"request": request, "typed": typed, "source": source, "interpretation": _str(data.get("interpretation")),
              "steps": base, "mappings": mappings, "corrections": corrections, "clarifications": questions[:MAX_QUESTIONS],
              "auto_resolved": [], "unsupported": unsupported, "assumptions": assumptions, "warnings": [],
-             "uncovered": []}
+             "uncovered": [], "unconfirmed": unconfirmed}
     _count_options(draft, store)
     _coverage(draft)
     _preview(draft, store)
@@ -235,7 +244,8 @@ def draft_from_spec(spec, store, source):
              "corrections": [], "clarifications": [], "auto_resolved": [], "assumptions": [],
              "unsupported": [{"phrase": w, "reason": "not used by the built-in parser", "alternative": None, "source": source}
                              for w in spec.get("unparsed", [])],
-             "warnings": [], "uncovered": [], "notes": list(spec.get("notes", [])), "prebuilt": copy.deepcopy(spec)}
+             "warnings": [], "uncovered": [], "unconfirmed": [], "notes": list(spec.get("notes", [])),
+             "prebuilt": copy.deepcopy(spec)}
     _preview(draft, store)
     return draft
 
@@ -276,6 +286,7 @@ def _coverage(draft):
     spans = []
     phrases = [m["phrase"] for m in draft["mappings"]] + [u["phrase"] for u in draft["unsupported"]]
     phrases += [q.get("phrase", "") for q in draft["clarifications"] + draft["auto_resolved"]]
+    phrases += [u["phrase"] for u in draft.get("unconfirmed", [])]
     for p in phrases:
         p = (p or "").lower().strip()
         if len(p) >= 2:
@@ -346,16 +357,20 @@ def to_spec(draft, answers=None):
               for c in chosen]
     notes += [a["reason"] for a in draft["auto_resolved"]]
     notes += [f"Assumed: {a}" for a in draft["assumptions"]]
-    notes += [f"Not in this release: {u['phrase']}. {u['reason']}" for u in draft["unsupported"]]
+    notes += [f"Not confirmed: '{u['phrase']}' was read as {u['read_as']}." for u in draft.get("unconfirmed", [])]
+    notes += [f"Not in this release: {u['phrase']}. {u['reason']}" if u.get("source") != "review"
+              else f"Not carried out: {u['phrase']} ({u['reason']})." for u in draft["unsupported"]]
     notes += draft.get("review_notes", [])
     spec["notes"] = notes
-    spec["unparsed"] = ([u["phrase"] for u in draft["unsupported"]] + draft["uncovered"]
-                        + [c["question"] for c in chosen if c["answered_by"] == "default"])
+    # Two different gaps for the verdict: words no step carries out, and readings nobody confirmed.
+    spec["unparsed"] = list(dict.fromkeys([u["phrase"] for u in draft["unsupported"]] + draft["uncovered"]))
+    spec["unconfirmed"] = ([f"{c['question']} (used: {c['answer']})" for c in chosen if c["answered_by"] == "default"]
+                           + [f"{u['phrase']} (read as: {u['read_as']})" for u in draft.get("unconfirmed", [])])
     spec["understood"] = draft["mappings"]
     spec["assistant"] = {"source": draft["source"], "model": draft.get("model"), "interpretation": draft["interpretation"],
                          "answers": chosen, "corrections": draft["corrections"], "assumptions": draft["assumptions"],
                          "unsupported": draft["unsupported"], "uncovered": draft["uncovered"],
-                         "reconcile": draft.get("reconcile")}
+                         "unconfirmed": draft.get("unconfirmed", []), "reconcile": draft.get("reconcile")}
     return spec
 
 
@@ -365,6 +380,7 @@ def review_items(spec):
     items = [f"Confirm the assumption: {x}" for x in a.get("assumptions", [])]
     items += [f"Confirm the default answer to: {c['question']} ({c['answer']})"
               for c in a.get("answers", []) if c.get("answered_by") == "default"]
+    items += [f"Confirm that '{u['phrase']}' means {u['read_as']}" for u in a.get("unconfirmed", [])]
     if a.get("corrections"):
         items.append("Check the corrections the assistant made to your wording (listed with the steps).")
     return items
