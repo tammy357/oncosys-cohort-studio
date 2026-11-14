@@ -20,8 +20,10 @@ const PAM_LABEL = { LumA: 'Luminal A', LumB: 'Luminal B', Her2: 'HER2-enriched',
 const LAYER_LABEL = { clinical: 'Clinical record', survival: 'Curated survival', mutation: 'Mutation calls (MC3)', copy_number: 'Copy number',
   rna: 'RNA expression', protein: 'Protein (RPPA)' };
 const short = text => String(text).split(' (')[0];
-// a step's label for a chip: drop the bracketed asides but keep the values ("ER status (clinical IHC) is one of Negative" -> "ER status is one of Negative")
-const chipLabel = text => String(text).replace(/\s*\([^)]*\)/g, '').replace(/^Keep samples where /, '').replace(/\s+/g, ' ').trim();
+// a step's label for a chip: drop the bracketed asides but keep the values ("ER status (clinical IHC) is one of Negative" -> "ER status is one of Negative").
+// A join that keeps each sample once (what "Fix it" switches to) is tagged, so the chip shows the fix changed it.
+const chipLabel = text => String(text).replace(/\s*\(keep each sample once if it has at least one match\)/, ' · each sample once')
+  .replace(/\s*\([^)]*\)/g, '').replace(/^Keep samples where /, '').replace(/\s+/g, ' ').trim();
 // The funnel's "colour by" characteristics. Categories keep a fixed order (and so a fixed colour) whatever the cohort;
 // the colours are CSS variables (--fz-*) so each theme has its own validated steps. Ordinal ones use one hue, light to dark.
 const FUNNEL_BY = [
@@ -701,7 +703,8 @@ function renderResult(res) {
       e.currentTarget.disabled = true;
       try {
         const r = await api(`/api/searches/${res.search_id}/fix`, { method: 'POST', body: { step_index: st.index } });
-        replaceResult(box, r, `Step ${st.index + 1} fixed: every sample is now counted once.`);
+        // say what the fix changed, not just that it happened ("Keep each sample once if it has at least one matching slide, ...")
+        replaceResult(box, r, `Step ${st.index + 1} fixed: ${st.fix || 'every sample is now counted once.'}`);
         toast('Double count fixed');
         refreshHistory();
       } catch (err) { errorToast(err.message); }
