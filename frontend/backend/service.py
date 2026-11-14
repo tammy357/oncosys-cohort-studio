@@ -93,7 +93,7 @@ GROUPS = [("LumA", "Luminal A"), ("LumB", "Luminal B"), ("Basal", "Basal-like"),
           ("Metastatic", "Metastatic")]
 FILES = {"cohort_samples.csv": "text/csv", "reproduce_cohort.py": "text/x-python", "cohort_spec.json": "application/json",
          "findings.json": "application/json", "verdict.json": "application/json", "ledger.csv": "text/csv",
-         "exclusions.csv": "text/csv", "sample_selection.csv": "text/csv", "coverage.csv": "text/csv"}
+         "exclusions.csv": "text/csv", "audit_trail.csv": "text/csv", "sample_selection.csv": "text/csv", "coverage.csv": "text/csv"}
 
 
 def compact_mutation(data_dir):
@@ -553,6 +553,7 @@ class Service:
             "verdict.json": lambda: json.dumps(v.to_dict(), indent=2),
             "ledger.csv": lambda: exports.ledger_frame(result).to_csv(index=False),
             "exclusions.csv": lambda: exports.exclusions_frame(result).to_csv(index=False),
+            "audit_trail.csv": lambda: exports.audit_trail_frame(result).to_csv(index=False),
             "sample_selection.csv": lambda: exports.selection_frame(result).to_csv(index=False),
             "coverage.csv": lambda: exports.coverage_frame(result, self.store).to_csv(index=False),
         }[name]()
@@ -602,8 +603,20 @@ class Service:
         chars = [c for c in FUNNEL_CHARACTERISTICS if c in comp.columns]
         composition = {c: {"start": counts(stages[0], c), "steps": [counts(x, c) for x in stages[1:]],
                            "final": counts(result.cohort_ids, c)} for c in chars}
+        fixes = exports.fixes_by_step(result)
         for st, s in zip(steps, result.steps):
             st["removed_by"] = {c: counts(s.removed, c) for c in ("PAM50 subtype", "ER status (IHC)", "Sample type") if c in chars} if s.removed else {}
+            # The audit trail, per step: why each removed sample left (grouped), how many patients left with them,
+            # and, for a join the fix repaired, how many rows it made before the fix and which samples were doubled.
+            why = pd.Series([s.removed_reasons.get(sid, s.removed_reason) for sid in s.removed], dtype=object)
+            st["reasons"] = [{"reason": r, "n": int(n)} for r, n in why.value_counts().items()]
+            st["patients_removed"] = max(s.patients_in - s.patients_out, 0) if not s.skipped else 0
+            fix = fixes.get(s.index + 1)
+            if fix:
+                doubled = fix.get("rows_per_sample", {})
+                st["fixed"] = {"rows_before": fix["rows"], "samples": fix["samples"], "doubled": len(doubled),
+                               "max_rows": max(doubled.values(), default=0), "examples": list(doubled)[:4],
+                               "fix": fix["fix"]}
         return {"spec": spec, "spec_labels": [describe_step(x) for x in spec["steps"]], "composition": composition,
                 "start": {"samples": len(result.start_samples)},
                 "final": {"rows": result.final_rows, "samples": len(result.cohort_ids),

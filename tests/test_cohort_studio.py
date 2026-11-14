@@ -456,3 +456,33 @@ def test_slide_only_normals_are_named_in_limitations():
     s = DataStore(REAL)
     r = run_fixed(parse_request("normal tissue samples with a slide", s), s)
     assert any("slide_manifest.csv but not in sample_manifest.csv" in l for l in verdict.limitations_for(r, s))
+
+
+# ---------- audit trail ----------
+def test_audit_trail_accounts_for_every_sample(store):
+    spec = parse_request("ER-positive primary tumors, one sample per patient", store)
+    r = run_fixed(spec, store)
+    trail = exports.audit_trail_frame(r)
+    assert sorted(trail.sample_id) == sorted(store.manifest.sample_id)          # every starting sample, once
+    assert set(trail.loc[trail.outcome == "in cohort", "sample_id"]) == set(r.cohort_ids)
+    removed = trail[trail.outcome == "removed"]
+    assert removed.removed_at_step.notna().all() and (removed.reason != "").all()
+    excl = exports.exclusions_frame(r)
+    assert {"patient_id", "patient still in cohort"} <= set(excl.columns)
+    er = excl[excl.step.str.contains("ER status")]
+    assert er.reason.str.contains("ER status").all()                         # names the value, not just "failed"
+    assert "patients removed" in exports.ledger_frame(r).columns
+
+
+def test_audit_trail_records_rows_removed_by_the_fix(store):
+    spec = parse_request("primary tumors with a diagnostic slide", store)
+    first = engine.run(spec, store)
+    assert any(s.inflated for s in first.steps)
+    fixed, _ = engine.apply_fixes(spec, first)
+    r = engine.run(fixed, store)
+    ledger = exports.ledger_frame(r)
+    row = ledger[ledger.inflated == "fixed"].iloc[0]
+    trail = exports.audit_trail_frame(r)
+    dup = trail[trail["inflated at step"].notna()]
+    assert len(dup) and (dup["rows before fix"] > 1).all()
+    assert row["rows before fix"] - row["samples"] == int((dup["rows before fix"] - 1).sum())  # every extra row accounted for

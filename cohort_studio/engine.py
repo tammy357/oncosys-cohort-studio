@@ -31,6 +31,7 @@ class StepResult:
     inflated: bool = False
     inflation_note: str = ""
     duplicate_examples: list = field(default_factory=list)
+    duplicate_counts: dict = field(default_factory=dict)  # inflated steps: rows per sample, for every sample with >1
     removed: list = field(default_factory=list)
     removed_reason: str = ""
     shift: dict = field(default_factory=dict)
@@ -58,6 +59,7 @@ class RunResult:
     final_rows: int
     final_samples: int
     final_patients: int
+    start_frame: pd.DataFrame = None  # sample_id, patient_id, sample_type of every sample the run started from
 
     @property
     def unresolved_inflation(self):
@@ -250,6 +252,23 @@ def _record_where(r, step, store, before):
             r.removed_reasons[sid] = why(own[sid])
 
 
+def _record_filter_values(r, step, store, before):
+    """Why each sample left a filter step, with the value it had: 'ER status is Negative' vs 'isn't recorded'."""
+    if not r.removed or not r.column:
+        return
+    label = store.field_label(step["table"], step["field"])
+    values = before.drop_duplicates("sample_id").set_index("sample_id")[f"{PREFIX[step['table']]}.{r.column}"]
+    for sid in r.removed:
+        value = values.get(sid)
+        blank = value is None or (isinstance(value, float) and pd.isna(value)) or not str(value).strip()
+        if blank:
+            r.removed_reasons[sid] = f"{label} isn't recorded"
+        elif ops.is_missing(value):
+            r.removed_reasons[sid] = f"{label} isn't usable (recorded as '{value}')"
+        else:
+            r.removed_reasons[sid] = f"{label} is '{value}'"
+
+
 def _duplicate_examples(frame, step, limit=5):
     counts = frame["sample_id"].value_counts()
     dup = counts[counts > 1].head(limit)
@@ -326,6 +345,8 @@ def run(spec, store):
         after_ids = set(new["sample_id"])
         r.removed = sorted(before_ids - after_ids)
         r.removed_reason = _removed_reason(step)
+        if step["op"] == "filter":
+            _record_filter_values(r, step, store, frame)
         if step["op"] == "one_per_patient":
             _record_selection(r, frame, new)
         if step["op"] == "where":
@@ -338,6 +359,8 @@ def run(spec, store):
             r.inflation_note = (f"Rows grew to {r.rows_out:,} but there are only {r.samples_out:,} distinct samples "
                                 f"({r.patients_out:,} patients): {extra:,} extra rows would count samples more than once.")
             r.duplicate_examples = _duplicate_examples(new, step)
+            counts = new["sample_id"].value_counts()
+            r.duplicate_counts = {sid: int(n) for sid, n in sorted(counts[counts > 1].items())}
         skip = _skip_columns_for(step)
         filtered_vars |= skip
         links = _expected_links(step)
@@ -362,7 +385,8 @@ def run(spec, store):
     return RunResult(spec=spec, steps=results, frame=frame, cohort_ids=cohort, problems=problems,
                      start_samples=start_ids, overall_shift=overall,
                      final_rows=len(frame), final_samples=frame["sample_id"].nunique(),
-                     final_patients=frame["patient_id"].nunique())
+                     final_patients=frame["patient_id"].nunique(),
+                     start_frame=store.manifest[["sample_id", "patient_id", "sample_type"]].copy())
 
 
 def suggest_fix(step):
@@ -396,7 +420,8 @@ def apply_fixes(spec, result, only=None):
         changes.append(f"Step {r.index + 1}: {why}")
         new.setdefault("fix_log", []).append({
             "step": r.index + 1, "was": r.label, "rows": r.rows_out, "samples": r.samples_out,
-            "patients": r.patients_out, "examples": r.duplicate_examples[:5], "fix": why})
+            "patients": r.patients_out, "examples": r.duplicate_examples[:5], "fix": why,
+            "inserted_step": fixed is None, "rows_per_sample": r.duplicate_counts})
     for pos in sorted(inserts, reverse=True):
         new["steps"].insert(pos, {"op": "dedupe"})
     return new, changes

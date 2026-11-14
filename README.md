@@ -278,8 +278,11 @@ The hosted service runs on the team's own server on AWS, at `api.maplestreettax.
    use.
 2. **Editable steps.** Every filter and join appears in a table you can edit before anything runs:
    sample type, data layers, joins (table, key, `rows` or `exists`), filters, gene mutations.
-3. **Step-by-step ledger.** Rows, distinct samples and distinct patients after every step, with a plain-words
-   reason for every sample removed (`exclusions.csv`).
+3. **Step-by-step ledger.** Rows, distinct samples and distinct patients after every step, and how many of each
+   it removed. Every removed sample gets a plain-words reason with the value that excluded it ("ER status is
+   'Negative'" vs "ER status isn't recorded") and whether its patient is still in the cohort through another sample
+   (`exclusions.csv`). `audit_trail.csv` lists every starting sample once: in the cohort, or where and why it left, and for a join that
+   counted it more than once, the step and how many rows it had before the fix (the ledger shows `rows before fix`).
 4. **Inflation check after every join.** If rows grow faster than distinct samples, the step is flagged, with
    example samples and the records they matched, and a one-click fix (keep each sample once, or join on the
    sample barcode instead of the patient barcode). Export is paused until it's fixed.
@@ -297,7 +300,8 @@ The hosted service runs on the team's own server on AWS, at `api.maplestreettax.
    decision rule, what a person must review, and the limitations. See [VERDICT_RULES.md](VERDICT_RULES.md).
 9. **Export.** `cohort_samples.csv` (one row per sample, `sample_id` column, no duplicates),
    `reproduce_cohort.py` (rebuilds the cohort with the same operations and checks the files' checksums),
-   `cohort_spec.json`, `ledger.csv`, `exclusions.csv`, `sample_selection.csv`, `coverage.csv`, `verdict.json` and
+   `cohort_spec.json`, `ledger.csv`, `exclusions.csv`, `audit_trail.csv`, `sample_selection.csv`, `coverage.csv`,
+   `verdict.json` and
    `findings.json` in the shared format v0.2.
 10. **Compare versions** (stretch): save two cohorts and see what's only in each.
 

@@ -515,6 +515,21 @@ function flowDiagram(res, onEdit) {
     if ((st.removed_examples || []).length) box.append(h('div', { class: 'fw-ex' }, 'e.g. ', st.removed_examples.slice(0, 4).map(x => h('code', {}, x))));
     return box;
   };
+  // Why each removed sample left, grouped: "ER status is 'Negative' 169 · isn't recorded 42". One reason = plain text.
+  const reasons = st => {
+    const rs = st.reasons || [];
+    if (rs.length < 2) return h('span', {}, rich((rs[0] && rs[0].reason) || st.removed_reason));
+    const max = Math.max(...rs.map(r => r.n));
+    return h('div', { class: 'fx-reasons' }, rs.slice(0, 5).map(r => h('div', { class: 'fx-r' },
+      h('span', { class: 'fx-bar' }, h('i', { style: `width:${Math.max(4, (100 * r.n) / max)}%` })),
+      h('span', { class: 'fx-n' }, fmt(r.n)), h('span', { class: 'fx-t' }, r.reason))),
+      rs.length > 5 ? h('div', { class: 'muted' }, `+ ${rs.length - 5} more reasons in exclusions.csv`) : null);
+  };
+  // A join the fix repaired: how many rows it made before, and which samples it had counted more than once.
+  const fixedBadge = st => st.fixed ? h('div', { class: 'fb-fixed' },
+    h('span', { class: 'fb-badge ok' }, `Fixed: ${fmt(st.fixed.rows_before)} rows → ${fmt(st.fixed.samples)} samples`),
+    h('small', {}, `${fmt(st.fixed.doubled)} samples had ${st.fixed.max_rows > 2 ? `2–${st.fixed.max_rows}` : '2'} rows; each is now counted once.`),
+    st.fixed.examples.length ? h('small', { class: 'fw-ex' }, 'e.g. ', st.fixed.examples.map(x => h('code', {}, x))) : null) : null;
   wrap.append(h('div', { class: 'flow-box flow-main start' }, 'All samples in the release', h('span', { class: 'fb-n' }, `n = ${fmt(res.start.samples)}`)));
   for (const st of res.steps) {
     wrap.append(h('div', { class: 'flow-stem' }, st.removed ? h('span', { class: 'branch' }) : null));
@@ -525,13 +540,16 @@ function flowDiagram(res, onEdit) {
       excl = h('button', { type: 'button', class: 'flow-box flow-excl', 'aria-expanded': 'false', title: 'Who was excluded',
         onclick: e => { const open = detail.hidden; detail.hidden = !open; e.currentTarget.setAttribute('aria-expanded', String(open));
           const gs = G(); if (open && gs) gs.from(detail, { height: 0, autoAlpha: 0, duration: 0.3, ease: 'power2.out', clearProps: 'all' }); } },
-      h('span', { class: 'fb-n' }, `Excluded n = ${fmt(st.removed)}`, h('span', { class: 'fb-more' }, ic('chevron-down'))), h('span', {}, rich(st.removed_reason)), detail);
+      h('span', { class: 'fb-n' }, `Excluded n = ${fmt(st.removed)}`,
+        h('small', { class: 'fx-pt' }, ` · ${fmt(st.patients_removed || 0)} patient${st.patients_removed === 1 ? '' : 's'} lost`),
+        h('span', { class: 'fb-more' }, ic('chevron-down'))), reasons(st), detail);
     }
     wrap.append(h('div', { class: 'flow-side' }, excl));
     wrap.append(h('div', { class: `flow-box flow-main${st.inflated ? ' inflated' : ''}${st.error ? ' error' : ''}` }, rich(st.label),
       h('span', { class: 'fb-n' }, st.skipped ? 'not run' : `n = ${fmt(st.samples)}`,
         st.skipped ? null : h('small', {}, ` · ${fmt(st.patients)} patients${st.rows !== st.samples ? ` · ${fmt(st.rows)} rows` : ''}`)),
       st.inflated ? h('span', { class: 'fb-badge' }, `${fmt(st.rows - st.samples)} rows counted twice`) : null,
+      fixedBadge(st),
       st.error ? h('div', { class: 'muted' }, st.error) : null,
       onEdit ? h('button', { type: 'button', class: 'fb-edit', title: 'Change this step', 'aria-label': `Change step ${st.index + 1}`, onclick: () => onEdit(st.index) }, ic('pen-line')) : null));
   }
@@ -568,6 +586,7 @@ const FILE_INFO = {
   'verdict.json': 'The verdict and every check behind it.',
   'ledger.csv': 'Rows, samples and patients after every step.',
   'exclusions.csv': 'Every excluded sample, with the step and the reason.',
+  'audit_trail.csv': 'Every starting sample once: kept, or the step that removed it, why, and whether its patient is still in.',
   'sample_selection.csv': 'For “one sample per patient”: which sample each patient kept, and why.',
   'coverage.csv': 'Every clinical and survival variable, with the share of cohort samples that have a value.',
 };
