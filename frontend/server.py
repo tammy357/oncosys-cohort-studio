@@ -30,6 +30,7 @@ from frontend.backend.limits import Caller, RequestRate  # noqa: E402
 from frontend.backend.mcp_http import add_mcp_routes  # noqa: E402
 from frontend.backend.service import Service, ServiceError  # noqa: E402
 from frontend.backend.storage import Storage  # noqa: E402
+from frontend.backend.upstream import Upstream, add_upstream  # noqa: E402
 
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
 
@@ -62,7 +63,7 @@ def _caller(settings, request, authorization=None, x_user=None, need_token=False
     return Caller(identity=f"anon:{_ip(request)}|{_user(x_user)}", ip=_ip(request))
 
 
-def create_app(settings=None, client=None, storage=None):
+def create_app(settings=None, client=None, storage=None, upstream_transport=None):
     settings = settings or Settings()
     storage = storage or Storage(settings.database_url)
     svc = Service(settings, storage, client=client)
@@ -272,6 +273,8 @@ def create_app(settings=None, client=None, storage=None):
                         headers={"cache-control": "public, max-age=604800, immutable"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    if settings.upstream_url:                          # added last, so it runs first: hosted backend, then this one
+        add_upstream(app, Upstream(settings.upstream_url, transport=upstream_transport))
     return app
 
 
@@ -279,4 +282,16 @@ if __name__ == "__main__":
     import os
 
     import uvicorn
-    uvicorn.run(create_app(), host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))
+
+    from cohort_studio import hosted
+    # A copy run from a clone asks the team's hosted backend first (it has the AI) and answers here only when that
+    # can't be reached. The command line's switches apply: COHORT_STUDIO_HOSTED=off answers everything on this
+    # computer (with your own key, if any), COHORT_STUDIO_API_URL picks another backend.
+    os.environ.setdefault("COHORT_STUDIO_UPSTREAM", ",".join(hosted.base_urls()) if hosted.enabled() else "off")
+    app = create_app()
+    host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", 8000))
+    up = getattr(app.state, "upstream", None)
+    print(f"Cohort Studio: http://{host}:{port}")
+    print(f"  API: hosted backend first ({', then '.join(up.bases)}), this computer if it can't be reached" if up else
+          "  API: answered on this computer only", flush=True)
+    uvicorn.run(app, host=host, port=port)

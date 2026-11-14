@@ -60,6 +60,12 @@ class Settings:
         tokens = overrides.get("api_tokens")
         self.api_tokens = tokens if isinstance(tokens, dict) else parse_tokens(env.get("COHORT_STUDIO_API_TOKENS", ""))
         self.max_body_bytes = get("max_body_bytes", "COHORT_STUDIO_MAX_BODY_BYTES", 1_000_000, int)
+        # A backend to ask first (backend/upstream.py), as addresses separated by commas, tried in order: `python
+        # frontend/server.py` sets the team's hosted backend, so a copy run from a clone gets the AI. Empty (the default,
+        # and always on the hosted server): answer everything here.
+        up = str(overrides.get("upstream_url", env.get("COHORT_STUDIO_UPSTREAM", "")) or "").strip()
+        self.upstream_url = "" if up.lower() in ("", "off", "none", "local", "0", "false") else \
+            ",".join(u.strip().rstrip("/") for u in up.split(",") if u.strip())
 
     def __repr__(self):                                # never print the tokens
         return f"Settings(data_dir={self.data_dir!r}, ai_enabled={self.ai_enabled}, tokens={len(self.api_tokens)})"

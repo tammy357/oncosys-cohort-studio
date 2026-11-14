@@ -130,6 +130,9 @@ A conversational web app with AI questions, autocomplete, saved searches and fav
 pip install -r frontend/requirements.txt
 python frontend/server.py
 ```
+Its API calls go to the team's hosted backend first, so the AI works without a key; if that can't be reached, your
+computer answers with the built-in parser. `COHORT_STUDIO_HOSTED=off python frontend/server.py` answers everything
+on your computer ([details](frontend/README.md#run-it)).
 Requests that only use sample types, data layers and slides work straight from the committed manifests.
 Clinical, survival and mutation filters need `fetch.py` first; until then the tool says
 **Insufficient Evidence** and tells you which file is missing.
@@ -201,6 +204,8 @@ Every local route (command line, files, Python, Streamlit) tries, in order:
    offline, the service can't be reached or is over its limit, or an AI draft can't run on your copy of the data.
 
 The output always says which one drafted the steps (`Drafted by: ...` and a note in `cohort_spec.json`).
+The local web app is the exception: `python frontend/server.py` sends its API calls to the hosted backend first and
+answers on your computer only when that can't be reached, unless you start it with `COHORT_STUDIO_HOSTED=off`.
 `--rules` uses only the built-in parser, so nothing leaves your computer. `--no-hosted` (or
 `COHORT_STUDIO_HOSTED=off`) allows your own model but never the hosted service.
 
@@ -269,6 +274,8 @@ your git-ignored `.env`, and never commit it. Ask the team for a token. Over a l
 parser drafts the steps and the output says why. Your own key is never limited by the service.
 
 The hosted service runs on the team's own server on AWS, at `api.maplestreettax.site`. The domain name isn't related to the project; it's simply the address the team's server uses.
+Some networks' web filters block that domain as new; when it can't be reached, the client tries the team's Vercel
+site, which relays `/api/` to the same server.
 
 ## What it does, step by step
 
@@ -392,7 +399,8 @@ request costs a small amount on that key.
   ```
 
 - **Web app:** copy the template with `cp .env.example .env` and uncomment your key line in `.env` (e.g.
-  `OPENAI_API_KEY=sk-...`), or set the key in the environment, then start `python frontend/server.py`. Add `COHORT_STUDIO_PROVIDER=anthropic` to use
+  `OPENAI_API_KEY=sk-...`), or set the key in the environment, then start `COHORT_STUDIO_HOSTED=off python frontend/server.py`
+  (without `COHORT_STUDIO_HOSTED=off`, the local web app asks the team's hosted backend first). Add `COHORT_STUDIO_PROVIDER=anthropic` to use
   Claude. The server stops calling the model after 200 calls per run (`COHORT_STUDIO_AI_CALL_LIMIT`), and the
   [daily limits](#running-the-hosted-ai-service) apply too, so a low-balance key can't be drained by accident.
 
@@ -455,8 +463,8 @@ ollama ps          # PROCESSOR should say 100% GPU
 - **Web app:**
 
   ```bash
-  COHORT_STUDIO_PROVIDER=openai OPENAI_BASE_URL=http://localhost:11434/v1 COHORT_STUDIO_MODEL=qwen2.5:7b \
-      python frontend/server.py
+  COHORT_STUDIO_HOSTED=off COHORT_STUDIO_PROVIDER=openai OPENAI_BASE_URL=http://localhost:11434/v1 \
+      COHORT_STUDIO_MODEL=qwen2.5:7b python frontend/server.py
   ```
 
 **What to expect** (from our tests with `qwen2.5:7b`)
