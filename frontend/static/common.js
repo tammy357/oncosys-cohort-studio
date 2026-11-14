@@ -336,5 +336,15 @@ export const auditRemovedList = st => {
         h('th', { title: 'Is this patient still in the cohort through another sample?' }, 'Patient still in'))), body)));
     render('');
   });
-  return h('div', { class: 'fx-listwrap' }, toggle, panel);
+  const csvCell = v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const download = h('button', { type: 'button', class: 'fx-all', title: 'Every sample this step removed, as a CSV file' }, `Download (CSV)`);
+  download.addEventListener('click', () => {
+    const lines = [['sample_id', 'patient_id', 'removed_at_step', 'step', 'reason', 'patient still in cohort'].join(',')]
+      .concat(list.map(r => [r.sample_id, r.patient_id, st.index + 1, st.label, r.reason, r.patient_kept ? 'yes' : 'no'].map(csvCell).join(',')));
+    const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));
+    const a = h('a', { href: url, download: `removed_at_step_${st.index + 1}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  return h('div', { class: 'fx-listwrap' }, h('div', { class: 'fx-links' }, toggle, download), panel);
 };

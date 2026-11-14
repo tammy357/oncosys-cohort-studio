@@ -651,6 +651,9 @@ function exportSection(res) {
     h('div', { class: 'files-menu' }, others.map(f => h('a', { download: f, href: url(f) }, ic('download'), h('span', {}, h('code', {}, f), h('small', {}, FILE_INFO[f] || ''))))));
   return sec('Export', h('div', { class: 'exports' },
     tipped(h('a', { class: 'btn small ink', download: 'cohort_samples.csv', href: url('cohort_samples.csv') }, ic('download'), 'Download cohort_samples.csv'), FILE_INFO['cohort_samples.csv']),
+    res.files.includes('audit_trail.csv')
+      ? tipped(h('a', { class: 'btn small', download: 'audit_trail.csv', href: url('audit_trail.csv') }, ic('list-checks'), 'Audit trail'), FILE_INFO['audit_trail.csv'])
+      : null,
     menu));
 }
 

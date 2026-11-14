@@ -509,7 +509,8 @@ function cohortPanel() {
     h('div', { class: 'cv-verdict-line' }, verdictLabel(v.verdict), h('span', {}, rich(v.reason))),
     nums([[fmt(f.samples), 'samples'], [fmt(f.patients), 'patients'], [fmt(f.rows), 'rows', f.rows > f.samples ? 'hot' : '']]),
     h('div', { class: 'cv-actions' },
-      h('button', { type: 'button', class: 'btn small ink', disabled: !ev.exportable, onclick: exportCsv }, ic('download'), 'Export cohort_samples.csv'),
+      h('button', { type: 'button', class: 'btn small ink', disabled: !ev.exportable, onclick: () => exportCsv() }, ic('download'), 'Export cohort_samples.csv'),
+      h('button', { type: 'button', class: 'btn small', disabled: !ev.exportable, onclick: exportAudit, title: 'Every starting sample: kept, or the step that removed it and why' }, ic('list-checks'), 'Audit trail'),
       h('button', { type: 'button', class: 'btn small', onclick: saveAndOpen }, ic('save'), 'Save & open'),
       !ev.exportable ? h('span', { class: 'muted' }, ev.export_block_reason) : null),
     details(`Checks · ${open ? `${open} to look at` : 'all passed'}`, [checkList(v)], true),
@@ -886,17 +887,18 @@ async function saveHere() {
     toast(`Saved${n > 1 ? ` as version ${n}` : ''}. It's in your history on the Build page.`, 'save');
   } catch (e) { errorToast(e.message); }
 }
-async function exportCsv() {
+async function exportCsv(file = 'cohort_samples.csv') {
   const ev = S.ev;
   if (!ev || ev.empty || !ev.exportable) { warnToast(ev && !ev.empty ? ev.export_block_reason || 'Export is paused.' : 'Add a step first.'); showPanel('cohort'); return; }
   try {
     const res = await saveCohort();
     if (!res) return;
-    const a = h('a', { href: `/api/searches/${res.search_id}/files/cohort_samples.csv?user=${encodeURIComponent(session.user)}`, download: 'cohort_samples.csv' });
+    const a = h('a', { href: `/api/searches/${res.search_id}/files/${file}?user=${encodeURIComponent(session.user)}`, download: file });
     document.body.append(a); a.click(); a.remove();
-    toast(`Saved and exported ${fmt(ev.final.samples)} samples`, 'download');
+    toast(file === 'cohort_samples.csv' ? `Saved and exported ${fmt(ev.final.samples)} samples` : `Saved and downloaded ${file}`, 'download');
   } catch (e) { errorToast(e.message); }
 }
+const exportAudit = () => exportCsv('audit_trail.csv');
 function xray(patientId, cid) {
   const st = cid !== null && cid !== undefined ? stepByCid(cid) : null;
   openXray($('#cv-xray'), patientId, { step: st, stepIndex: st ? S.steps.indexOf(st) : 0, inCohort: S.ev ? new Set(S.ev.cohort_ids || []) : null });
@@ -961,7 +963,8 @@ async function init() {
   $('#cv-zoom-out').addEventListener('click', () => graph.zoomOut());
   $('#cv-zoom-n').addEventListener('click', () => graph.zoomReset());
   $('#cv-save').addEventListener('click', saveHere);
-  $('#cv-export').addEventListener('click', exportCsv);
+  $('#cv-export').addEventListener('click', () => exportCsv());
+  $('#cv-audit').addEventListener('click', exportAudit);
   $('#cv-ask').addEventListener('submit', e => { e.preventDefault(); ask($('#cv-q').value); });
   if (!S.ai) $('#cv-q').placeholder = 'Describe a cohort (the built-in parser drafts it)';
 
