@@ -22,7 +22,7 @@ see who the steps removed and get a verdict → export `cohort_samples.csv` and 
 | Aayam Raj Shakya | [@aayamrajshakya](https://github.com/aayamrajshakya) |
 | Yanyun Ma | [@yanyun1112](https://github.com/yanyun1112) |
 
-**Demo video:** _add link here_
+**Demo video:** [Cohort Studio in 2:24](https://drive.google.com/file/d/1zuOz-MrdpAW_QPP257ONAGM_yk0cn0Ex/view?usp=sharing): describe a cohort, answer its questions, catch and fix a double count, build it on the canvas with verified SQL, compare cohorts, and learn it with the tours and docs.
 
 ---
 
