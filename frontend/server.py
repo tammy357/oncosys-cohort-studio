@@ -24,6 +24,7 @@ from fastapi import Body, FastAPI, Header, Request  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
+from frontend.backend.canvas import Canvas  # noqa: E402
 from frontend.backend.config import Settings  # noqa: E402
 from frontend.backend.limits import Caller, RequestRate  # noqa: E402
 from frontend.backend.mcp_http import add_mcp_routes  # noqa: E402
@@ -85,7 +86,7 @@ def create_app(settings=None, client=None, storage=None):
     async def _revalidate_assets(request: Request, call_next):
         # The page and its assets are small: always revalidate (ETag) so an update is never hidden by a stale cache.
         response = await call_next(request)
-        if request.url.path in ("/", "/compare") or request.url.path.startswith("/static/"):
+        if request.url.path in ("/", "/compare", "/canvas") or request.url.path.startswith("/static/"):
             response.headers["cache-control"] = "no-cache"
         return response
 
@@ -219,6 +220,43 @@ def create_app(settings=None, client=None, storage=None):
     @app.get("/compare")
     def compare_page():
         return FileResponse(STATIC / "compare.html")
+
+    # ---------- the visual canvas (backend/canvas.py): the same steps, drawn as a graph ----------
+    canvas = Canvas(svc)
+    app.state.canvas = canvas
+
+    @app.get("/canvas")
+    def canvas_page():
+        return FileResponse(STATIC / "canvas.html")
+
+    @app.get("/api/canvas/catalog")
+    def canvas_catalog():
+        return canvas.catalog()
+
+    @app.get("/api/canvas/genes")
+    def canvas_genes(q: str = ""):
+        return canvas.genes(q)
+
+    @app.post("/api/canvas/evaluate")
+    def canvas_evaluate(body: dict = Body(...)):
+        return canvas.evaluate(body.get("steps") or [])
+
+    @app.post("/api/canvas/code")
+    def canvas_code(body: dict = Body(...)):
+        return canvas.code(body.get("steps") or [], verify=bool(body.get("verify", True)))
+
+    @app.get("/api/canvas/patients/{patient_id}")
+    def canvas_patient(patient_id: str):
+        return canvas.patient(patient_id)
+
+    @app.post("/api/canvas/gallery")
+    def canvas_gallery(body: dict = Body(...)):
+        return canvas.gallery(body.get("steps") or [], body.get("limit", 24), body.get("kinds"))
+
+    @app.get("/api/canvas/thumbs/{barcode}.jpg")
+    def canvas_thumb(barcode: str):
+        return Response(canvas.thumb(barcode), media_type="image/jpeg",
+                        headers={"cache-control": "public, max-age=604800, immutable"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

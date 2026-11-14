@@ -736,6 +736,7 @@ function renderResult(res) {
   } }, ic('star'), 'Save as favourite');
   box.append(h('div', { class: 'actions' }, fav,
     h('a', { class: 'btn small', href: `/compare?a=s:${res.search_id}` }, ic('git-compare'), 'Compare with another'),
+    h('a', { class: 'btn small', href: `/canvas?open=${res.search_id}` }, ic('workflow'), 'Open in canvas'),
     h('span', { class: 'spacer' }),
     tipped(h('button', { class: 'icon-btn', onclick: () => copy(JSON.stringify(res.spec, null, 2), 'Steps copied as JSON') }, ic('braces')), 'Copy the steps as JSON'),
     tipped(h('button', { class: 'icon-btn', onclick: () => copy(`${location.origin}/?open=${res.search_id}`, 'Link copied') }, ic('link-2')), 'Copy a link to this cohort')));

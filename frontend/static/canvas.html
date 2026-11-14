@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="light" class="preload">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cohort Canvas</title>
+  <meta name="description" content="Build a TCGA-BRCA cohort visually: drag tables and filters onto a pipeline and watch every join's grain and count, with verified SQL beside it.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14.5' fill='none' stroke='%2317161c' stroke-width='1.6'/%3E%3Ccircle cx='13.5' cy='17' r='6.2' fill='%233d348b'/%3E%3Ccircle cx='20.5' cy='11.5' r='2.6' fill='%23c93a63'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/canvas.css">
+  <script>
+    try { var t = localStorage.getItem('cs-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    setTimeout(function () { document.documentElement.classList.remove('preload'); }, 1200);
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="cv-page">
+  <!-- one slim bar: where you are, what the cohort is, and what to do with it -->
+  <header class="cv-top" id="topbar">
+    <a class="wordmark" href="/" aria-label="Cohort Studio, home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14.5" class="mark-ring"/><circle cx="13.5" cy="17" r="6.2" class="mark-haem"/><circle cx="20.5" cy="11.5" r="2.6" class="mark-eosin"/></svg>
+      <span class="wm-name">Cohort Studio</span>
+    </a>
+    <nav class="nav" aria-label="Pages">
+      <a href="/"><i data-lucide="filter"></i><span>Build</span></a>
+      <a href="/canvas" aria-current="page"><i data-lucide="workflow"></i><span>Canvas</span></a>
+      <a href="/compare"><i data-lucide="git-compare"></i><span>Compare</span></a>
+    </nav>
+    <div class="cv-status" id="cv-status" aria-live="polite"></div>
+    <div class="cv-top-right">
+      <button type="button" class="icon-btn" id="cv-undo" aria-label="Undo" title="Undo (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
+      <button type="button" class="icon-btn" id="cv-redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><i data-lucide="redo-2"></i></button>
+      <span class="cv-sep" aria-hidden="true"></span>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch colour theme"><i data-lucide="moon"></i></button>
+      <label class="cv-user" title="Your history and favourites are kept under this name"><i data-lucide="user-round"></i><input id="user" autocomplete="off" spellcheck="false" aria-label="Your name"></label>
+      <button type="button" class="btn small ghost" id="cv-save" title="Save this cohort (it appears in your history on the Build page)"><i data-lucide="save"></i><span>Save</span></button>
+      <button type="button" class="btn small ink" id="cv-export" title="Save the cohort and download cohort_samples.csv"><i data-lucide="download"></i><span>Export</span></button>
+    </div>
+  </header>
+
+  <main class="cv-app" id="cv-app">
+    <!-- the canvas: full bleed, everything else floats above it -->
+    <div class="cv-stage" id="cv-stage" tabindex="0" aria-label="Cohort pipeline. Arrow keys move between cards, Delete removes a step.">
+      <div class="cv-lanes" aria-hidden="true"></div>
+      <div class="cv-world"><svg class="cv-wires" aria-hidden="true"></svg><div class="cv-nodes"></div></div>
+      <div class="cv-empty" id="cv-empty" hidden></div>
+    </div>
+
+    <aside class="cv-float cv-library" id="cv-library" aria-label="Blocks" hidden></aside>
+    <aside class="cv-float cv-panel" id="cv-panel" aria-label="Details" hidden></aside>
+    <section class="cv-float cv-sheet" id="cv-sheet" aria-label="The cohort's slides" hidden></section>
+
+    <form class="cv-float cv-ask" id="cv-ask" autocomplete="off" hidden>
+      <i data-lucide="sparkles" class="cv-ask-ico"></i>
+      <input id="cv-q" type="text" aria-label="Describe a cohort, or a change to this one" placeholder="Describe a cohort…">
+      <div class="seg cv-ask-mode" role="group" aria-label="What the words do" id="cv-ask-mode"></div>
+      <span id="ai-status" class="cv-ai"><i class="status-dot"></i><span id="ai-model">…</span></span>
+      <button type="submit" class="btn small ink" id="cv-ask-go" aria-label="Draw it"><i data-lucide="arrow-up"></i></button>
+    </form>
+
+    <div class="cv-float cv-toolbar" id="cv-toolbar" role="toolbar" aria-label="Canvas tools"></div>
+    <div class="cv-float cv-zoom" role="group" aria-label="Zoom">
+      <button type="button" class="icon-btn" id="cv-zoom-out" aria-label="Zoom out"><i data-lucide="minus"></i></button>
+      <button type="button" class="cv-zoom-n" id="cv-zoom-n" title="Reset to 100%">100%</button>
+      <button type="button" class="icon-btn" id="cv-zoom-in" aria-label="Zoom in"><i data-lucide="plus"></i></button>
+      <button type="button" class="icon-btn" id="cv-fit" aria-label="Fit to view" title="Fit to view (F)"><i data-lucide="scan"></i></button>
+    </div>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <dialog id="cv-xray" class="cv-xray" aria-labelledby="cv-xray-title"></dialog>
+
+  <script type="module" src="/static/canvas.js"></script>
+</body>
+</html>

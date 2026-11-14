@@ -101,6 +101,41 @@ forwards every `/api/...` request to the backend, so the browser talks to one ad
 - **Your cohorts:** every run is saved and can be reopened, edited, favourited or deleted. The user name in the top
   bar separates people's histories (no login: this is a local tool).
 
+## Canvas (`/canvas`)
+
+The same cohort, built visually. The canvas fills the window; everything else floats above it only while you use it,
+from a small toolbar at the bottom: **Add** (the block library: sample types, tables, data layers, every clinical and
+survival field with its values, genes, rules, templates; drag a block onto a wire or click it), **Ask** (describe a
+cohort or a change in words), **Flow / Grain lanes**, **Cohort** (verdict, checks, who is in), **Code** and **Slides**.
+Clicking a card opens the inspector on the right; Esc closes whatever is open. Every card is the engine's own numbers
+for that step; nothing on the page computes a count.
+
+- **Wires to scale.** The ink core is the samples flowing on, a pink halo the extra rows a join added
+  (rows − samples), and a thin branch under each card the samples it removed, with who they were.
+- **Grain.** Each card shows what one row stands for after it (● one per patient, ■ one per sample, stacked squares
+  several per sample). *Grain lanes* puts each card in the lane of its grain, so a join that inflates visibly drops a
+  lane and its fix brings it back. Tables a join reads sit above it with their fan-out (2.46 slides per sample, max 8).
+- **Fixes in place.** An inflating join gets a callout with its extra rows, a one-click fix and an *X-ray*: one real
+  patient as a tree (patient → samples → slides, with real slide thumbnails), showing which slides become rows.
+- **Inspector.** Click a card to edit it (chips with counts, a visual AND / OR / NOT builder for combined conditions),
+  and see what it did: samples in and out, the cohort without it, who it removed, shifts (TVD), missing values.
+- **Code beside it.** SQL (DuckDB, one CTE per step, the selected step highlighted), the Python reproduce script and
+  the JSON steps. The server runs the SQL in DuckDB on the frozen files and compares every step's rows, samples and
+  patients and the final sample IDs with the engine: *Verified* only when all of them match (`cohort_studio/sql.py`;
+  `tests/test_sql.py` checks every eval case). Without `pip install duckdb` the SQL is still shown, marked *Not verified*.
+- **Cohort and slides.** *Cohort* shows the verdict, every check and the start-vs-cohort mix; *Slides* opens a sheet of
+  the cohort's slides (thumbnails from NCI Imaging Data Commons, fetched once and cached in `frontend/.data/thumbs/`;
+  with Pillow installed they're cropped to the tissue).
+- Undo / redo, drag to reorder, switch a step off, keyboard (A to add, / to ask, ← → between cards, Delete, F to fit,
+  Esc to close), light and dark themes. *Save* keeps the cohort in your history (each save of the same cohort is a
+  new version) without leaving the canvas; *Save & open* in the Cohort panel opens it on the Build page, whose results
+  have *Open in canvas*.
+  Links: `/canvas?open=<id>`, `/canvas?template=<n>`, `/canvas?q=<request>`.
+
+API (all reuse the engine): `GET /api/canvas/catalog`, `POST /api/canvas/evaluate`, `POST /api/canvas/code`,
+`GET /api/canvas/patients/<id>`, `POST /api/canvas/gallery`, `GET /api/canvas/thumbs/<slide>.jpg`,
+`GET /api/canvas/genes?q=<symbol>` (the block library's gene search: exact, prefix and closest matches).
+
 ## Editing a cohort
 
 "Edit steps" (on a result, a draft, a history row, or any filter chip or flow-diagram box) opens the editor, a
