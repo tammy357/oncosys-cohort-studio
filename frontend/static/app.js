@@ -1,9 +1,10 @@
 // Cohort Studio — Build page. Shared helpers live in common.js; three.js, GSAP and Lucide are optional.
 import {
   $, $$, h, s, ic, paintIcons, store, session, api, fmt, clock, modeLabel, verdictLabel, timeAgo, rich,
-  countTo, enter, toast, warnToast, errorToast, clearToasts, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion,
+  countTo, enter, toast, warnToast, errorToast, clearToasts, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion, did,
 } from './common.js';
 import { openWorkbench } from './workbench.js';
+import { initTour } from './tour.js';
 
 const state = { meta: null, aiAvailable: false, history: [], specimen: null, q: 0 };
 const STATUS = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', unknown: 'OPEN' };
@@ -318,6 +319,7 @@ function renderQuestions(d, host) {
       w.stop();
       host.replaceChildren(protocol(r.spec, r.spec_labels, { draft: d, mode: r.mode, query: d.typed || d.request, answered: true }));
       animatePanel(host);
+      did('clarify');
     } catch (e) {
       w.stop();
       host.replaceChildren(note('bad', 'circle-alert', "Couldn't apply the answers.", e.message));
@@ -706,6 +708,7 @@ function renderResult(res) {
         // say what the fix changed, not just that it happened ("Keep each sample once if it has at least one matching slide, ...")
         replaceResult(box, r, `Step ${st.index + 1} fixed: ${st.fix || 'every sample is now counted once.'}`);
         toast('Double count fixed');
+        did('fix');
         refreshHistory();
       } catch (err) { errorToast(err.message); }
     } }, ic('wrench'), 'Fix it');
@@ -1174,5 +1177,8 @@ async function init() {
   else if (params.get('open')) openSearch(Number(params.get('open')));
   else if (params.get('advanced')) openAdvanced();
   else if (params.get('prefill')) { input.value = params.get('prefill'); input.focus(); fetchSuggest(); }
+  // tours, practice and the help menu (first visit only; Help reopens them)
+  const HR = 'hormone receptor positive, HER2 negative tumors with protein data';
+  initTour({ page: 'build', setups: { clarify: () => { input.value = HR; window.scrollTo({ top: 0, behavior: 'smooth' }); startSearch(HR); } } });
 }
 init();

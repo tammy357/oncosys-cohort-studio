@@ -1,0 +1,361 @@
+{
+ "build-ask": {
+  "voice": 9.473,
+  "video": 10.73,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 2.32,
+    "t": "If your request could mean two different things,"
+   },
+   {
+    "s": 1.84,
+    "e": 3.84,
+    "t": "Cohort Studio asks first."
+   },
+   {
+    "s": 3.44,
+    "e": 6.72,
+    "t": "Every answer shows how many samples it would keep,"
+   },
+   {
+    "s": 6.48,
+    "e": 9.36,
+    "t": "so you choose with the numbers in front of you."
+   }
+  ]
+ },
+ "build-fix": {
+  "voice": 11.314,
+  "video": 12.57,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 2.8,
+    "t": "Every step shows exactly how many samples are left."
+   },
+   {
+    "s": 2.56,
+    "e": 6.08,
+    "t": "When a join starts counting the same sample twice,"
+   },
+   {
+    "s": 5.6,
+    "e": 8.48,
+    "t": "it's flagged in pink."
+   },
+   {
+    "s": 8.24,
+    "e": 9.52,
+    "t": "One click on Fix it,"
+   },
+   {
+    "s": 9.2,
+    "e": 11.2,
+    "t": "and every sample counts once again."
+   }
+  ]
+ },
+ "build-verdict": {
+  "voice": 9.087,
+  "video": 10.33,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 4.0,
+    "t": "Each cohort gets an honest verdict: ready, conditional, or blocked."
+   },
+   {
+    "s": 3.6,
+    "e": 6.72,
+    "t": "Open it to see every check behind it,"
+   },
+   {
+    "s": 6.32,
+    "e": 8.88,
+    "t": "and what a person still needs to review."
+   }
+  ]
+ },
+ "build-take": {
+  "voice": 9.477,
+  "video": 11.47,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 1.6,
+    "t": "When it's ready,"
+   },
+   {
+    "s": 0.88,
+    "e": 2.8,
+    "t": "download the sample list,"
+   },
+   {
+    "s": 2.48,
+    "e": 6.32,
+    "t": "and a Python script that rebuilds the cohort exactly."
+   },
+   {
+    "s": 5.52,
+    "e": 8.08,
+    "t": "Or open it on the canvas,"
+   },
+   {
+    "s": 7.6,
+    "e": 9.36,
+    "t": "and keep shaping it visually."
+   }
+  ]
+ },
+ "canvas-read": {
+  "voice": 10.215,
+  "video": 11.57,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 1.84,
+    "t": "This is your cohort as a pipeline."
+   },
+   {
+    "s": 1.44,
+    "e": 3.68,
+    "t": "Every card is one step,"
+   },
+   {
+    "s": 3.36,
+    "e": 5.6,
+    "t": "with the real count from the engine."
+   },
+   {
+    "s": 5.2,
+    "e": 8.4,
+    "t": "And every wire is drawn to scale,"
+   },
+   {
+    "s": 7.84,
+    "e": 10.08,
+    "t": "so you can see where samples drop away."
+   }
+  ]
+ },
+ "canvas-fix": {
+  "voice": 11.33,
+  "video": 12.6,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 2.56,
+    "t": "A join that adds extra rows turns pink."
+   },
+   {
+    "s": 2.08,
+    "e": 5.76,
+    "t": "Tap See why to X-ray a real patient,"
+   },
+   {
+    "s": 5.76,
+    "e": 8.16,
+    "t": "and watch their slides become rows."
+   },
+   {
+    "s": 7.36,
+    "e": 9.76,
+    "t": "Then one click on Fix,"
+   },
+   {
+    "s": 9.28,
+    "e": 11.28,
+    "t": "and every sample counts once."
+   }
+  ]
+ },
+ "canvas-add": {
+  "voice": 8.754,
+  "video": 10.03,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 1.6,
+    "t": "Press Add to open the blocks."
+   },
+   {
+    "s": 1.6,
+    "e": 3.52,
+    "t": "Drag one onto any wire,"
+   },
+   {
+    "s": 3.52,
+    "e": 4.72,
+    "t": "and it slots right in."
+   },
+   {
+    "s": 4.72,
+    "e": 6.96,
+    "t": "If it needs data from another table,"
+   },
+   {
+    "s": 6.96,
+    "e": 8.72,
+    "t": "the join is added for you."
+   }
+  ]
+ },
+ "canvas-lanes": {
+  "voice": 10.706,
+  "video": 12.27,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 3.2,
+    "t": "Switch on grain lanes to see what one row stands for:"
+   },
+   {
+    "s": 2.8,
+    "e": 4.8,
+    "t": "a patient, a sample,"
+   },
+   {
+    "s": 4.4,
+    "e": 6.16,
+    "t": "or several rows per sample."
+   },
+   {
+    "s": 5.92,
+    "e": 9.52,
+    "t": "A join that double counts drops a lane,"
+   },
+   {
+    "s": 9.12,
+    "e": 10.72,
+    "t": "and its fix brings it back."
+   }
+  ]
+ },
+ "canvas-code": {
+  "voice": 11.945,
+  "video": 13.3,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 4.32,
+    "t": "Open Code to see the same cohort as SQL, Python,"
+   },
+   {
+    "s": 3.2,
+    "e": 5.84,
+    "t": "or the raw steps."
+   },
+   {
+    "s": 5.36,
+    "e": 8.16,
+    "t": "The SQL isn't just written."
+   },
+   {
+    "s": 7.84,
+    "e": 9.6,
+    "t": "It's run,"
+   },
+   {
+    "s": 9.2,
+    "e": 11.28,
+    "t": "and checked against the engine,"
+   },
+   {
+    "s": 10.72,
+    "e": 11.84,
+    "t": "step by step."
+   }
+  ]
+ },
+ "compare-pick": {
+  "voice": 9.697,
+  "video": 11.1,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 3.2,
+    "t": "Pick any two cohorts: saved ones, favourites,"
+   },
+   {
+    "s": 2.48,
+    "e": 5.2,
+    "t": "or two versions of the same cohort."
+   },
+   {
+    "s": 4.72,
+    "e": 8.4,
+    "t": "Both are rerun on the same frozen data,"
+   },
+   {
+    "s": 7.92,
+    "e": 9.68,
+    "t": "so the comparison is fair."
+   }
+  ]
+ },
+ "compare-overlap": {
+  "voice": 6.829,
+  "video": 8.1,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 2.56,
+    "t": "See exactly who the two cohorts share,"
+   },
+   {
+    "s": 2.56,
+    "e": 3.84,
+    "t": "drawn to scale,"
+   },
+   {
+    "s": 3.84,
+    "e": 6.8,
+    "t": "with plain sentences that say what the numbers mean."
+   }
+  ]
+ },
+ "compare-outcomes": {
+  "voice": 6.926,
+  "video": 8.2,
+  "dark": true,
+  "captions": [
+   {
+    "s": 0.0,
+    "e": 1.28,
+    "t": "Then see how they differ:"
+   },
+   {
+    "s": 1.28,
+    "e": 2.32,
+    "t": "who is in each,"
+   },
+   {
+    "s": 2.32,
+    "e": 3.52,
+    "t": "which data they have,"
+   },
+   {
+    "s": 3.52,
+    "e": 5.04,
+    "t": "and survival curves,"
+   },
+   {
+    "s": 5.04,
+    "e": 6.88,
+    "t": "with one record per patient."
+   }
+  ]
+ }
+}

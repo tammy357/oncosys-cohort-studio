@@ -1,5 +1,6 @@
 // Cohort Studio — Compare page. Every number comes from /api/compare (the cohort engine); AI insights are optional.
-import { $, $$, h, s, ic, paintIcons, api, fmt, timeAgo, modeLabel, verdictLabel, rich, countTo, toast, warnToast, errorToast, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion } from './common.js';
+import { $, $$, h, s, ic, paintIcons, api, fmt, timeAgo, modeLabel, verdictLabel, rich, countTo, toast, warnToast, errorToast, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion, did } from './common.js';
+import { initTour, coachBlocked } from './tour.js';
 
 const params = new URLSearchParams(location.search);
 const state = { a: params.get('a'), b: params.get('b'), searches: [], favorites: [], ai: null, data: null, tab: 'recent', picking: 'a', km: 'pfi' };
@@ -132,6 +133,7 @@ async function runCompare() {
     state.data = d;
     renderSlots();
     renderResults(d);
+    did('compare');
   } catch (e) {
     host.replaceChildren(note('bad', 'circle-alert', "Couldn't compare them.", e.message));
     paintIcons();
@@ -408,5 +410,12 @@ async function init() {
   const g = G();
   if (g) g.from(['.c-hero .eyebrow', '.c-hero h1', '.c-hero > p', '.slots'], { y: 16, autoAlpha: 0, duration: 0.7, stagger: 0.08, ease: 'power3.out', clearProps: 'transform,opacity,visibility' });
   if (state.a && !state.b && !reduceMotion) setTimeout(() => toast('Now choose cohort B to compare with', 'git-compare'), 600);
+  // tours, practice and the help menu. Practice: compare the two most recent cohorts (or say how to get two).
+  initTour({ page: 'compare', eligible: () => state.searches.length >= 2, setups: { compare: () => {
+    if (state.searches.length < 2) { coachBlocked('Comparing needs two saved cohorts. Every run on the Build page is saved.', { href: '/', label: 'Go to Build' }); return false; }
+    if (!state.a) state.a = `s:${state.searches[0].id}`;
+    if (!state.b) state.b = `s:${state.searches.find(x => `s:${x.id}` !== state.a).id}`;
+    sync();
+  } } });
 }
 init();
