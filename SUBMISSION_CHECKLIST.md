@@ -20,7 +20,7 @@ Submit through the judging form by the **code freeze: Saturday, November 14, 2:1
 - [ ] **Third-party code** and its licenses listed.
 
 ## Output files the organizers' checker reads
-Judges run each featured tool on an input you haven't seen, and a checker compares the output with an answer key. Your tool must be able to write:
+Judges run each featured tool on an input you haven't seen, and a checker compares the output with an answer key. The input comes in a [sealed envelope](envelopes/README.md) that you open at the start of your Q&A. Rehearse with the practice envelope. Your tool must be able to write:
 - [ ] **Cohort Control Tower:** `findings.json` (shared format) for a new release.
 - [ ] **Repair Review Desk:** the imported file with your `decisions` added (shared format).
 - [ ] **Research Claim Auditor:** `audit.json` (shared format, one `claim_check` finding per claim).

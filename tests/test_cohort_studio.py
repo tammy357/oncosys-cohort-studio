@@ -411,3 +411,48 @@ def test_but_alone_is_not_called_a_dropped_exclusion():
     from cohort_studio.verdict import explain_unused
     text = explain_unused(["but", "count", "once"])
     assert "leave out" not in text and "NOT applied" in text
+
+
+# ---------- Saturday: envelope request file, and joins that need two slide kinds ----------
+@pytest.mark.parametrize("text, expect", [
+    ("# Cohort Studio request\n\nPrimary tumors with RNA data and a frozen-section slide.\n",
+     "Primary tumors with RNA data and a frozen-section slide."),
+    ("# Your cohort\n\nA researcher asks:\n\n> ER-positive primary tumors with a diagnostic slide\n\nExport cohort_samples.csv.\n",
+     "ER-positive primary tumors with a diagnostic slide"),
+    ('## Request\nBuild this cohort: "tumour-normal pairs with RNA". Export `cohort_samples.csv`.\n',
+     "tumour-normal pairs with RNA"),
+    ("**Request:** primary tumors with protein data and any slide\n\n_The checker reads cohort_samples.csv._\n",
+     "primary tumors with protein data and any slide"),
+    ("# Request\n```\nbasal-like tumors with a diagnostic slide\n```\n", "basal-like tumors with a diagnostic slide"),
+])
+def test_markdown_request_file_gives_one_request(tmp_path, text, expect):
+    from cohort_studio.api import load_queries
+    f = tmp_path / "cohort_studio_request.md"
+    f.write_text(text)
+    assert load_queries(f) == [expect]
+
+
+@pytest.mark.skipif(not (REAL / "slide_manifest.csv").exists(), reason="real manifests not present")
+@pytest.mark.parametrize("request_text, expected", [
+    ("primary tumors with both a diagnostic slide and a frozen slide", 1056),
+    ("primary tumors with a diagnostic slide and a frozen slide", 1056),
+    ("primary tumors with protein data, a diagnostic slide and a frozen slide", 730),
+    ("primary tumors with diagnostic slides", 1061),
+    ("primary tumors with a frozen slide", 1093),
+    ("primary tumors with a top-section slide", 1044),
+    ("tumor and matched normal samples with RNA data", 278),
+    ("primary tumours with a matched normal", 139),
+])
+def test_slide_and_normal_joins_on_real_manifests(request_text, expected):
+    s = DataStore(REAL)
+    spec = parse_request(request_text, s)
+    assert not spec["unparsed"]
+    r = run_fixed(spec, s)
+    assert len(r.cohort_ids) == expected
+
+
+@pytest.mark.skipif(not (REAL / "slide_manifest.csv").exists(), reason="real manifests not present")
+def test_slide_only_normals_are_named_in_limitations():
+    s = DataStore(REAL)
+    r = run_fixed(parse_request("normal tissue samples with a slide", s), s)
+    assert any("slide_manifest.csv but not in sample_manifest.csv" in l for l in verdict.limitations_for(r, s))

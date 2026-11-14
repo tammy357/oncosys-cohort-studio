@@ -59,12 +59,46 @@ def as_query(item):
     raise ValueError(f"Not a cohort request or definition: {json.dumps(item)[:120]}")
 
 
+def request_from_markdown(text):
+    """One plain-English request from a Markdown file such as the envelope's cohort_studio_request.md.
+
+    A quoted request (a > block, a ``` block, or text in double quotes) wins; otherwise the prose is joined into one
+    request. Headings, comments, emphasis and lines about exporting files are left out."""
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)
+    fenced = re.findall(r"```[^\n]*\n(.*?)```", text, flags=re.S)
+    if fenced and fenced[0].strip():
+        return " ".join(fenced[0].split())
+    quoted = [l.lstrip()[1:].strip() for l in text.splitlines() if l.lstrip().startswith(">")]
+    if any(quoted):
+        return " ".join(" ".join(q for q in quoted if q).split())
+    body = " ".join(l for l in text.splitlines() if not l.strip().startswith("#"))
+    in_quotes = [q for q in re.findall(r"[\"“]([^\"”]{10,})[\"”]", body) if not q.strip().endswith(".csv")]
+    if len(in_quotes) == 1:
+        return " ".join(in_quotes[0].split())
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or re.match(r"^[-*_]{3,}$", line):
+            continue
+        if re.search(r"cohort_samples\.csv|\bexport\b|\bsample_id\b column|\bchecker\b", line, flags=re.I):
+            continue
+        line = re.sub(r"^[-*+]\s+|^\d+[.)]\s+", "", line)                 # list markers
+        line = re.sub(r"[*_`]+", "", line)                                   # emphasis and code marks
+        line = re.sub(r"^(?:request|cohort|the cohort to build|build)\s*:\s*", "", line, flags=re.I)
+        lines.append(line)
+    return " ".join(" ".join(lines).split())
+
+
 def load_queries(path):
-    """The queries in a file: .txt = one plain-English request per line ('#' lines are skipped); .json = one query,
-    a list of them, or {"cohorts": [...]}; each query is a request string, {"request": ...} or a definition with
-    "steps" (an optional "name" names its output folder)."""
+    """The queries in a file: .md = one request (for example the envelope's cohort_studio_request.md); .txt = one
+    plain-English request per line ('#' lines are skipped); .json = one query, a list of them, or {"cohorts": [...]};
+    each query is a request string, {"request": ...} or a definition with "steps" (an optional "name" names its
+    output folder)."""
     path = pathlib.Path(path)
     text = path.read_text(encoding="utf-8-sig")
+    if path.suffix.lower() in (".md", ".markdown"):
+        request = request_from_markdown(text)
+        return [request] if request else []
     if path.suffix.lower() != ".json":
         return [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
     data = json.loads(text)

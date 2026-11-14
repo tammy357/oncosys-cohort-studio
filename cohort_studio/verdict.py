@@ -364,4 +364,31 @@ def limitations_for(result, store):
                    "treated as wild-type.")
     if not store.available("clinical"):
         out.append("Clinical fields aren't loaded, so the shift check only covers submitting site and sample type.")
+    # Organisers' rulings (Discord, 13 Nov): sample_manifest.csv is the official list of samples.
+    try:
+        ids = set(result.cohort_ids)
+        if store.available("survival") and ids:
+            col = store.resolve_field("survival", "redaction")
+            surv = store.table("survival")
+            if col and col in surv.columns:
+                sid = surv["sample_id"] if "sample_id" in surv.columns else surv.index.to_series()
+                red = sorted(set(sid[surv[col].astype(str).str.strip().str.lower() == "redacted"]) & ids)
+                if red:
+                    out.append(f"{len(red)} sample{'s' if len(red) > 1 else ''} in this cohort "
+                               f"({', '.join(red[:3])}{', ...' if len(red) > 3 else ''}) "
+                               f"{'have' if len(red) > 1 else 'has'} a survival record marked Redacted. "
+                               "They stay in, because the sample manifest lists survival data for them, but a person "
+                               "should check them before any survival analysis.")
+        touches_normals_or_slides = any(
+            (st.get("op") == "join" and st.get("table") in ("slides", "normals"))
+            or (st.get("op") == "sample_type" and "Solid Tissue Normal" in st.get("values", []))
+            for st in steps)
+        if touches_normals_or_slides:
+            slide_only = sorted(set(store.slides["sample_id"]) - set(store.manifest["sample_id"]))
+            if slide_only:
+                out.append(f"{len(slide_only)} samples appear in slide_manifest.csv but not in sample_manifest.csv "
+                           f"(for example {slide_only[0]}). They are left out, because the sample manifest is the "
+                           "official list of samples; the two files disagree about them.")
+    except Exception:  # a limitation note must never stop the verdict
+        pass
     return out

@@ -41,9 +41,9 @@ def verify(name="practice-B"):
 
 def write(df, dest, name):
     if name == "clinical.tsv":
-        df.to_csv(dest / name, sep="\t", index=False)
+        df.to_csv(dest / name, sep="\t", index=False, lineterminator="\n")
     else:
-        df.to_csv(dest / name, sep="\t", compression={"method": "gzip", "mtime": 0} if name.endswith(".gz") else None)
+        df.to_csv(dest / name, sep="\t", lineterminator="\n", compression={"method": "gzip", "mtime": 0} if name.endswith(".gz") else None)
 
 def main():
     if "--verify" in sys.argv:

@@ -35,7 +35,7 @@ Build a web app, an AI agent, a visual workflow, or a tool that plugs into a not
 | **Thu, Nov 12, 1:30 PM ET** | Team registration closes ([form](https://red.ht/toa-oncosys-team-matching), teams of 3–5). Organizers then post **team pairs** in Discord. |
 | **Thu, Nov 12 · Checkpoint 1** | Post **one working result** in Discord: a screenshot or short clip of your tool producing something real from the data. |
 | **Fri, Nov 13 · Checkpoint 2** | **Swap repos with your paired team.** Each team clones the other's repo into a fresh folder, follows its README alone, and posts in Discord what worked and what broke. |
-| **Sat, Nov 14** | In person at the Cabral Center. Code freeze **2:15 PM**; demos 2:30–4:00 PM; awards 4:30 PM. |
+| **Sat, Nov 14** | In person at the Cabral Center. You open your [sealed envelope](envelopes/README.md) at the start of your Q&A. Code freeze **2:15 PM**; demos 2:30–4:00 PM; awards 4:30 PM. |
 
 Checkpoints aren't part of the rubric, but Checkpoint 2 is the best way to find out, before judges do, whether your project runs on someone else's machine.
 
@@ -60,6 +60,7 @@ Checkpoints aren't part of the rubric, but Checkpoint 2 is the best way to find 
 | `data/` | Seven data packs: each with a README, sources and checksums, fetch script, and manifests |
 | `kickoff/` | Kickoff slides (PDF) |
 | `assets/` | The challenge page image |
+| `envelopes/` | Sealed envelopes: the unseen inputs for Saturday, plus a practice envelope ([how they work](envelopes/README.md)) |
 | `format/` | Shared findings format v0.2, validator and reference output |
 | `warmup/wisconsin/` | Optional 30-minute warm-up on a small dataset |
 | [`RULES.md`](RULES.md) · [`DATA_LICENSES.md`](DATA_LICENSES.md) | What's allowed, and how to credit the data |

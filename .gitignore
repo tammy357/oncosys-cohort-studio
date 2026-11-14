@@ -24,3 +24,6 @@ frontend/.data/
 # Parser benchmark runs and local environments
 evals/results/
 .venv/
+
+# Opened envelopes are local only
+envelopes/opened/

@@ -11,3 +11,4 @@ idc-index  # slides, CT and annotations from NCI Imaging Data Commons
 # Cohort Studio app
 streamlit>=1.50
 pytest
+cryptography>=41  # opens the sealed envelopes on Saturday (envelopes/unseal.py)

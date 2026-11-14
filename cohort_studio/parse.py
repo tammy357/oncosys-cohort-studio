@@ -175,7 +175,9 @@ def parse_request(text, store=None):
                   r"normal(?:[- ]tissue)? samples? from the same patients?",
                   "a normal-tissue sample from the same patient")
     add_normals = bool(pair) and bool(re.search(r"pairs?|and their normal|plus (?:their |the )?normal|include (?:the |their )?normal|"
-                                                r"both (?:the )?tumou?r and (?:the )?normal", t.lower))
+                                                r"both (?:the )?tumou?r and (?:the )?normal|"
+                                                r"tumou?rs?(?: samples?)? and (?:their |the |its )?(?:matched|matching|paired|adjacent) normal",
+                                                t.lower))
 
     # --- sample types left out: "excluding metastatic samples", "except normals" ---
     # Only explicit exclusion words: "without metastases" or "no normal tissue" can be about the patient (no distant
@@ -218,8 +220,18 @@ def parse_request(text, store=None):
     if t.find(r"diagnostic(?: \(ffpe\))?(?: slides?| images?)?|\bffpe\b(?: slides?)?|\bdx\b(?: slides?)?", "diagnostic (FFPE) slides") and \
             (has_slide_word or re.search(r"ffpe|\bdx\b", t.lower)):
         kinds += ["diagnostic (FFPE)"]
+    for part in ("top", "middle", "bottom"):
+        if t.find(rf"(?:frozen[, ]+)?{part}[- ]sections?(?: slides?| images?)?", f"frozen {part}-section slides"):
+            kinds += [f"frozen, {part} section"]
     if t.find(r"frozen(?:[- ]section)?(?: slides?| sections?| images?)?", "frozen-section slides"):
-        kinds += ops.FROZEN_KINDS
+        kinds += [k for k in ops.FROZEN_KINDS if k not in kinds] if not any(k in ops.FROZEN_KINDS for k in kinds) else []
+    # "both a diagnostic slide and a frozen slide": every sample needs one of each, not either kind
+    lower = t.lower
+    dx_word, fr_word = r"(?:diagnostic|ffpe|\bdx\b)", r"(?:frozen|top[- ]section|middle[- ]section|bottom[- ]section)"
+    both_kinds = bool(re.search(rf"\bboth\b[^.;]*{dx_word}[^.;]*{fr_word}|\bboth\b[^.;]*{fr_word}[^.;]*{dx_word}|"
+                                rf"{dx_word}[\w ()-]*?slides?\s+(?:and|plus|as well as)\s+(?:also\s+)?(?:an?\s+)?{fr_word}|"
+                                rf"{fr_word}[\w ()-]*?slides?\s+(?:and|plus|as well as)\s+(?:also\s+)?(?:an?\s+)?{dx_word}",
+                                lower))
     any_slide = t.find(r"(?:pathology |tissue |h&e |whole[- ]slide )?(?:slides?|images?|\bwsi\b)", "a pathology slide")
     want_slides = bool(kinds) or bool(any_slide)
 
@@ -389,7 +401,14 @@ def parse_request(text, store=None):
         steps += survival_filters
     if pair:
         steps.append({"op": "join", "table": "normals", "key": "patient_id", "mode": "rows", "add_to_cohort": add_normals})
-    if want_slides:
+    if want_slides and both_kinds and "diagnostic (FFPE)" in kinds and any(k in ops.FROZEN_KINDS for k in kinds):
+        notes.append("Each sample must have both a diagnostic slide and a frozen slide, so these are two separate "
+                       "requirements rather than one join of either kind.")
+        steps.append({"op": "join", "table": "slides", "key": "sample_id", "mode": "rows",
+                      "slide_kinds": ["diagnostic (FFPE)"]})
+        steps.append({"op": "join", "table": "slides", "key": "sample_id", "mode": "exists",
+                      "slide_kinds": [k for k in kinds if k in ops.FROZEN_KINDS]})
+    elif want_slides:
         steps.append({"op": "join", "table": "slides", "key": "sample_id", "mode": "rows",
                       "slide_kinds": list(dict.fromkeys(kinds))})
     if choose:

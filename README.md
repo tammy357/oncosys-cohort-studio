@@ -95,6 +95,25 @@ python format/validate.py output/findings.json       # check findings.json again
 python -m pytest tests -q                            # tests (synthetic fixture + the real manifests)
 ```
 
+### On the day: the sealed envelope
+
+The judges' test is a new cohort request in a sealed envelope. Open it with the organizers' script (it checks
+release A first, so run `fetch.py` beforehand), then point Cohort Studio at the request file:
+
+```bash
+python envelopes/unseal.py 07 amber falcon river quartz            # the number and four words from your card
+python -m cohort_studio --file envelopes/opened/E07/cohort_studio_request.md --out output/E07
+```
+
+The tool prints the request it read, every step with its counts, any join that counts samples twice and the fix,
+and the verdict, then writes `output/E07/cohort_samples.csv` (one `sample_id` per row) for the checker. Add
+`--rules` to use only the built-in parser, with nothing leaving the computer. If the file's layout is unexpected,
+paste the request itself in quotes instead: `python -m cohort_studio "the request" --out output/E07`.
+
+Rehearse with the practice envelope (`python envelopes/unseal.py practice orange meadow pilot lantern`). It holds
+practice release B for the Control Tower track, not a cohort request, so it checks that unsealing works on your
+machine.
+
 ### If something goes wrong
 
 - **`fetch.py` fails with a connection error:** your network may block the download hosts. Requests that only use
@@ -532,4 +551,4 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 ## Third-party code
 
 pandas (BSD-3-Clause), Streamlit (Apache-2.0), Matplotlib (Matplotlib/PSF licence), jsonschema (MIT),
-pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause), psycopg (LGPL-3.0; the Postgres driver, used only when `DATABASE_URL` points at Postgres). The organizers' challenge files (`data/`, `format/`, `starter/` and others) are used as provided.
+pytest (MIT). Web app: FastAPI (MIT), Uvicorn (BSD-3-Clause), SQLAlchemy (MIT), HTTPX (BSD-3-Clause), psycopg (LGPL-3.0; the Postgres driver, used only when `DATABASE_URL` points at Postgres). cryptography (Apache-2.0 or BSD-3-Clause; used only by the organizers' `envelopes/unseal.py`). The organizers' challenge files (`data/`, `format/`, `starter/`, `envelopes/` and others) are used as provided.

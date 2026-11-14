@@ -171,7 +171,10 @@ def reproduce_script(result, store):
             lines.append(f"df = join_table(df, right, {PREFIX[t]!r}, {s['key']!r}, {s.get('mode', 'rows')!r})")
         elif op == "filter":
             col = store.resolve_field(s["table"], s["field"])
-            lines.append(f"df = filter_column(df, {PREFIX[s['table']] + '.' + col!r}, {s['cmp']!r}, {s.get('value')!r})")
+            if col is None:   # the file isn't downloaded or has no such column; the verdict already says so
+                lines.append(f"raise SystemExit({('This release has no column for ' + repr(s['field']) + ' in ' + s['table'] + '; run data/tcga-brca/fetch.py first.')!r})")
+            else:
+                lines.append(f"df = filter_column(df, {PREFIX[s['table']] + '.' + col!r}, {s['cmp']!r}, {s.get('value')!r})")
         elif op == "mutation":
             if "mutation" not in loaded:
                 lines.append("mutation = load_mutation(DATA)")
