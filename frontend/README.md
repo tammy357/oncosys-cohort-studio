@@ -16,7 +16,16 @@ pip install -r requirements.txt -r frontend/requirements.txt
 python frontend/server.py                  # http://127.0.0.1:8000
 ```
 
-The AI assistant reads `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) from the environment or from the repository's
+**Started like this, the pages' API calls go to the team's hosted backend first**, the same backend the Vercel site
+uses, so the AI works with no key. It's tried at `https://api.maplestreettax.site`, then through the Vercel site
+(which relays `/api/` to it) for networks whose web filter blocks the server's own domain. If neither can be
+reached, or the backend is busy or restarting (HTTP 429, 502, 503, 504), this computer answers instead, with the
+built-in parser, and the hosted backend isn't tried again for 30 seconds. The terminal says when that happens, and
+every `/api/` answer carries `x-cohort-studio-backend: hosted` or `local`. Searches and favourites made while the
+hosted backend answers are stored there, not on this computer.
+
+To answer everything on this computer, with your own key or a local model, start it with `COHORT_STUDIO_HOSTED=off`.
+The AI assistant then reads `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) from the environment or from the repository's
 `.env` file, which git ignores. Without a key, the built-in parser and Advanced search still work.
 
 | Setting | Default | What it does |
@@ -31,6 +40,8 @@ The AI assistant reads `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) from the enviro
 | `DATABASE_URL` | `sqlite:///frontend/.data/cohort_studio.db` | Where searches and favourites are stored |
 | `COHORT_STUDIO_AI` | `on` | `off` hides the AI and uses the built-in parser |
 | `HOST`, `PORT` | `127.0.0.1`, `8000` | Where the server listens |
+| `COHORT_STUDIO_HOSTED` | `on` | `off`: `python frontend/server.py` answers every API call on this computer |
+| `COHORT_STUDIO_UPSTREAM` | the hosted backend, then its Vercel relay | Backends to ask first, separated by commas; `off` for none. Only `python frontend/server.py` sets it, so the AWS service (started with `uvicorn --factory`) never forwards |
 
 ### Postgres
 
