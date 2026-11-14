@@ -131,6 +131,10 @@ def main(argv=None):
     ap.add_argument("--data-dir")
     ap.add_argument("-v", "--verbose", action="store_true", help="show step differences for misses")
     args = ap.parse_args(argv)
+    if "ai" in args.parser:
+        # the key from the repository's .env, as the command line and the app read it (never printed)
+        from cohort_studio.env import load_dotenv
+        load_dotenv(EVALS.parent / ".env")
 
     store = DataStore(args.data_dir)
     if not store.available("clinical"):
