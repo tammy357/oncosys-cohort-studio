@@ -178,6 +178,20 @@ runs both protocols on the frozen files and shows:
 
 Links: `/compare?a=s:<id>&b=s:<id>` (saved cohorts), `f:<id>` (favourites) or `v:<id>:<n>` (version n of a cohort).
 
+## Tours, practice and docs
+
+- **Tours.** The first time someone opens Build, Canvas or Compare in a browser, a small card offers a one-minute
+  tour in the corner; the page keeps working around it, and a reload never shows it again. Each step (at most five,
+  complex features only) plays real footage of the app with a voice-over (Gradium), captions and a mute switch, and
+  spotlights the real control when it is on screen. **Help (?)** in the top bar replays any tour.
+- **Practice.** Five real tasks (answer a clarifying question, fix a double count, drag a block onto a wire, check
+  the SQL is verified, compare two cohorts) tick themselves off when the page reports them. Each has *Show me* (the
+  clip) and *Do it* (sets the task up; loading the demo on the canvas is undoable).
+- **Docs** at `/docs`, rendered from `frontend/static/docs.md`. AI agents read the same file at `/docs.md`, indexed by
+  `/llms.txt`; it includes how to guide a user, every deep link, the API and the MCP tools.
+- Content: `frontend/static/tour/tours.json`. Media and how to rebuild them: [`frontend/tour/README.md`](tour/README.md).
+  Links: `/?tour=1`, `/canvas?tour=1`, `/compare?tour=1`.
+
 ## Reading aids
 
 - **Flow diagram first.** "Where every sample went" opens on a CONSORT-style flow diagram. Click an exclusion to

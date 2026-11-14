@@ -1,0 +1,214 @@
+/* Product tours, practice and the help menu (tour.js). Uses the app's tokens from app.css, so both themes work. */
+
+/* ---------- the unlock card: first visit, bottom-right, never blocks the page ---------- */
+.tour-unlock { position: fixed; right: 18px; bottom: 18px; z-index: 120; width: 344px; border-radius: 16px; overflow: hidden;
+  background: var(--card-hi); border: 1px solid var(--rule); box-shadow: var(--shadow-pop);
+  animation: tuIn .55s cubic-bezier(.2, 1.1, .3, 1) both; }
+.tour-unlock.leaving { animation: tuOut .24s var(--ease) both; }
+@keyframes tuIn { from { transform: translateY(28px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tuOut { to { transform: translateY(16px); opacity: 0; } }
+.tu-media { position: relative; aspect-ratio: 16 / 10; background: var(--paper-2); overflow: hidden; }
+.tu-media::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 62%, color-mix(in srgb, var(--card-hi) 70%, transparent)); }
+.tu-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tu-x { position: absolute; top: 8px; right: 8px; z-index: 2; width: 30px; height: 30px; border-radius: 9px;
+  background: color-mix(in srgb, var(--card-hi) 86%, transparent); backdrop-filter: blur(6px); }
+.tu-body { padding: 14px 18px 16px; }
+.tu-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--eosin); }
+.tu-spark { width: 8px; height: 8px; border-radius: 50%; background: var(--eosin); box-shadow: 0 0 0 0 var(--eosin);
+  animation: spark 2s ease-out infinite; }
+@keyframes spark { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--eosin) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 9px transparent; } }
+.tour-unlock h2 { margin: 0 0 4px; font-size: 18px; font-weight: 700; letter-spacing: -.015em; color: var(--ink); }
+.tour-unlock p#tu-blurb { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--muted); }
+.tu-acts { display: flex; gap: 8px; margin-top: 14px; }
+.tu-time { margin-left: 4px; padding-left: 8px; border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent); font-weight: 500; opacity: .75; }
+
+/* once someone starts working: a small pill in the corner, then it leaves on its own */
+.tour-unlock.mini { top: auto; bottom: 18px; width: auto; border-radius: 12px; animation: tuIn .3s var(--ease) both; }
+.tour-unlock.mini .tu-media, .tour-unlock.mini .tu-eyebrow, .tour-unlock.mini h2, .tour-unlock.mini #tu-blurb, .tour-unlock.mini .tu-later { display: none; }
+.tour-unlock.mini .tu-body { padding: 6px 40px 6px 6px; }
+.tour-unlock.mini .tu-acts { margin: 0; }
+.tour-unlock.mini .tu-x { top: 50%; right: 5px; transform: translateY(-50%); width: 28px; height: 28px; background: none; backdrop-filter: none; }
+
+.cv-page .tour-unlock.mini { top: 64px; bottom: auto; left: 0; right: 0; margin: 0 auto; width: max-content; }
+
+/* the canvas keeps its bottom edge for the toolbar: the card waits at the top right instead */
+.cv-page .tour-unlock:not(.mini) { top: 64px; bottom: auto; animation-name: tuInTop; }
+@keyframes tuInTop { from { transform: translateY(-20px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- the player ---------- */
+.tour-player { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0;
+  border: none; background: transparent; overflow: hidden; color: var(--ink); }
+.tour-player::backdrop { background: rgba(15, 14, 19, .42); backdrop-filter: blur(2px); animation: fadeIn .25s ease both; }
+.tour-player.spotting::backdrop { background: transparent; backdrop-filter: none; }
+.tour-player.leaving .tp-card { animation: tpOut .2s var(--ease) both; }
+.tour-player.leaving::backdrop { opacity: 0; transition: opacity .2s; }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes tpIn { from { transform: translate(-50%, calc(-50% + 14px)) scale(.98); opacity: 0; } }
+@keyframes tpOut { to { opacity: 0; transform: translate(-50%, calc(-50% + 8px)); } }
+.tp-spot { position: fixed; border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(15, 14, 19, .42);
+  outline: 2px solid var(--eosin); outline-offset: 2px; transition: all .35s var(--ease); }
+.tp-spot::after { content: ""; position: absolute; inset: -8px; border-radius: 16px; border: 2px solid var(--eosin); opacity: 0;
+  animation: beacon 1.8s ease-out infinite; }
+@keyframes beacon { 0% { opacity: .7; transform: scale(.96); } 100% { opacity: 0; transform: scale(1.12); } }
+
+.tp-card { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 24px); display: flex; flex-direction: column; border-radius: 18px; background: var(--card-hi);
+  border: 1px solid var(--rule); box-shadow: var(--shadow-pop); overflow: hidden; animation: tpIn .32s var(--ease) both; }
+.tp-card.placed { transform: none; animation: tpFade .25s var(--ease) both; }
+@keyframes tpFade { from { opacity: 0; } }
+.tp-card.compact { width: min(440px, calc(100vw - 24px)); }
+.tp-card.compact .tp-media { max-height: none; margin: 0 12px; }
+.tp-card.compact .tp-text { padding: 12px 16px 2px; }
+.tp-card.compact .tp-text h2 { font-size: 18px; }
+.tp-card.compact .tp-body { font-size: 14px; }
+.tp-card.compact .tp-foot { padding: 10px 12px 12px 16px; }
+.tp-card.wide { width: min(1100px, calc(100vw - 32px)); }
+.tp-card.wide .tp-media { max-height: calc(100vh - 250px); }
+.tp-top { display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
+.tp-progress { flex: 1; display: flex; gap: 5px; }
+.tp-seg { flex: 1; height: 4px; border-radius: 4px; background: var(--rule); overflow: hidden; }
+.tp-seg i { display: block; height: 100%; background: var(--ink); transform: scaleX(0); transform-origin: left; }
+.tp-seg.done i { transform: scaleX(1); }
+.tp-x { width: 30px; height: 30px; }
+
+.tp-media { position: relative; margin: 0 16px; aspect-ratio: 16 / 10; max-height: calc(100vh - 290px); border-radius: 12px; overflow: hidden;
+  background: var(--paper-2); border: 1px solid var(--rule); }
+.tp-video { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--paper-2); }
+.tp-card.loading .tp-media::before { content: ""; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--card-hi) 50%, transparent), transparent); background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.tp-ctls { display: flex; gap: 2px; }
+.tp-ctl { width: 30px; height: 30px; display: grid; place-items: center; border: none; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.tp-ctl:hover, .tp-ctl:focus-visible { background: var(--paper-2); color: var(--ink); outline: none; }
+.tp-ctl[aria-pressed="true"] { background: var(--paper-2); color: var(--ink); }
+.tp-ctl svg { width: 16px; height: 16px; }
+.tp-cc { position: absolute; left: 50%; bottom: 12px; z-index: 2; transform: translateX(-50%); max-width: 86%; padding: 6px 12px; border-radius: 8px;
+  background: rgba(15, 14, 19, .78); color: #fff; font-size: 14px; line-height: 1.4; text-align: center; }
+.tp-cc.empty { display: none; }
+.tp-play { position: absolute; inset: 0; margin: auto; z-index: 3; width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center; background: var(--ink); color: var(--paper); box-shadow: var(--shadow-pop); }
+.tp-play svg { width: 26px; height: 26px; margin-left: 3px; }
+
+.tp-text { padding: 16px 20px 4px; }
+.tp-kicker { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.tp-text h2, .tp-end h2 { margin: 0 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
+.tp-body { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink-2); max-width: 56ch; }
+.tp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+.tp-find { display: inline-flex; align-items: center; gap: 6px; }
+.tp-find svg { width: 14px; height: 14px; color: var(--eosin); }
+.tp-docs { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--rule-2); }
+.tp-docs:hover { color: var(--ink); }
+.tp-docs svg { width: 13px; height: 13px; }
+.tp-foot { display: flex; align-items: center; gap: 8px; padding: 14px 16px 16px 20px; }
+.tp-foot .spacer { flex: 1; }
+.tp-skip { color: var(--muted); }
+.tp-next.nudge { animation: nudge 1.8s ease-out infinite; }
+@keyframes nudge { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ink) 40%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px transparent; } }
+
+.tp-end { position: relative; padding: 34px 24px 6px; text-align: center; }
+.tp-end .tp-body { margin: 0 auto; }
+.tp-burst { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tp-end > :not(.tp-burst) { position: relative; z-index: 1; }
+.tp-badge { width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ink); color: var(--paper); animation: pop .5s cubic-bezier(.2, 1.4, .4, 1) both; }
+.tp-badge svg { width: 30px; height: 30px; stroke-width: 2.4; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+
+/* ---------- help menu and practice ---------- */
+.cs-menu, .cs-pop { position: fixed; z-index: 130; border-radius: 14px; background: var(--card-hi); border: 1px solid var(--rule);
+  box-shadow: var(--shadow-pop); animation: menuIn .16s var(--ease) both; }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } }
+.cs-menu { width: 280px; padding: 6px; }
+.cs-mi { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: none; border-radius: 9px; background: none;
+  text-align: left; cursor: pointer; color: var(--ink); font: inherit; }
+.cs-mi:hover, .cs-mi:focus-visible { background: var(--paper-2); outline: none; }
+.cs-mi-ico { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--paper-2); color: var(--ink-2); }
+.cs-mi:hover .cs-mi-ico { background: var(--card-hi); }
+.cs-mi-ico svg { width: 16px; height: 16px; }
+.cs-mi-t b { display: block; font-size: 13.5px; font-weight: 600; }
+.cs-mi-t small { display: block; font-size: 12px; color: var(--muted); }
+.cs-mi-sep { height: 1px; margin: 6px 4px; background: var(--rule); }
+.cs-mi-label { margin: 4px 8px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.cs-mi-row { display: flex; gap: 4px; padding: 0 4px 4px; }
+.cs-mi-link { flex: 1; padding: 6px 8px; border-radius: 8px; text-align: center; font-size: 13px; color: var(--ink-2); text-decoration: none; border: 1px solid var(--rule); }
+.cs-mi-link:hover, .cs-mi-link:focus-visible { background: var(--paper-2); color: var(--ink); outline: none; }
+
+.cs-practice { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 7px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--card); color: var(--ink); font: 600 12.5px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.cs-practice:hover { border-color: var(--rule-2); background: var(--card-hi); }
+.cs-practice svg { width: 18px; height: 18px; transform: rotate(-90deg); }
+.cs-practice .track { fill: none; stroke: var(--rule); stroke-width: 2.4; }
+.cs-practice .fill { fill: none; stroke: var(--eosin); stroke-width: 2.4; stroke-linecap: round; transition: stroke-dashoffset .6s var(--ease); }
+.cs-practice.complete .fill { stroke: var(--ok); }
+.cs-practice.bump { animation: bump .5s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes bump { 40% { transform: scale(1.12); } }
+
+.cs-pop { width: 340px; padding: 14px; outline: none; }
+.cs-pop-head { display: flex; align-items: flex-start; gap: 8px; }
+.cs-pop-head > div { flex: 1; }
+.cs-pop-head h3 { margin: 2px 0 2px; font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.cs-pop-head p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.cs-meter { position: relative; display: flex; align-items: center; gap: 10px; margin: 12px 0 8px; }
+.cs-meter::before { content: ""; flex: 1; height: 6px; border-radius: 6px; background: var(--rule); }
+.cs-meter i { position: absolute; left: 0; top: 50%; height: 6px; margin-top: -3px; border-radius: 6px; background: var(--eosin);
+  max-width: calc(100% - 58px); transition: width .6s var(--ease); }
+.cs-meter span { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cs-tasks { list-style: none; margin: 0; padding: 0; }
+.cs-task { border-radius: 10px; }
+.cs-task.open { background: var(--paper-2); }
+.cs-task-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: none; background: none; border-radius: 10px;
+  font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+.cs-task-head:hover:not(:disabled), .cs-task-head:focus-visible { background: var(--paper-2); outline: none; }
+.cs-task-head:disabled { cursor: default; }
+.cs-check { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1.6px solid var(--rule-2); }
+.cs-task.done .cs-check { background: var(--ok); border-color: var(--ok); color: var(--card-hi); animation: pop .4s cubic-bezier(.2, 1.4, .4, 1); }
+.cs-check svg { width: 12px; height: 12px; stroke-width: 3; }
+.cs-task-t { flex: 1; font-size: 13.5px; font-weight: 600; }
+.cs-task.done .cs-task-t { color: var(--muted); font-weight: 500; }
+.cs-task-where { font-size: 11px; color: var(--faint); }
+.cs-task-body { padding: 0 10px 10px 38px; }
+.cs-task-body p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.cs-task-acts { display: flex; gap: 6px; }
+.cs-pop-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 12.5px; }
+.cs-pop-foot .spacer { flex: 1; }
+.cs-pop-foot .text-link { color: var(--muted); }
+.cs-all { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 600; }
+.cs-all svg { width: 15px; height: 15px; }
+.cs-burst { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 140; }
+
+/* ---------- the practice coach: the task under way, and a beacon on where to do it ---------- */
+.cs-coach { position: fixed; right: 16px; bottom: 16px; z-index: 125; width: 300px; padding: 12px 14px 14px; border-radius: 14px;
+  background: var(--card-hi); border: 1px solid var(--rule); box-shadow: var(--shadow-pop); animation: tuIn .35s var(--ease) both; }
+.cv-page .cs-coach { bottom: 72px; left: 12px; right: auto; }
+.cv-page .cs-coach.right { left: auto; right: 12px; }
+.cs-coach-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cs-coach-top .icon-btn { width: 28px; height: 28px; margin: -4px -6px 0 0; }
+.cs-coach-k { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--eosin); }
+.cs-coach.done .cs-coach-k { color: var(--ok); }
+.cs-coach-k svg { width: 14px; height: 14px; }
+.cs-coach-t { margin: 4px 0 2px; font-size: 15px; font-weight: 650; color: var(--ink); }
+.cs-coach-h { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.cs-coach-acts { display: flex; gap: 6px; margin-top: 10px; }
+.cs-coach-acts:empty { display: none; }
+.cs-beacon { position: fixed; z-index: 124; border-radius: 12px; pointer-events: none; outline: 2px solid var(--eosin); outline-offset: 1px; }
+.cs-beacon::after { content: ""; position: absolute; inset: -6px; border-radius: 15px; border: 2px solid var(--eosin); opacity: 0; animation: beacon 1.6s ease-out infinite; }
+
+/* ---------- small screens: the card is a bottom sheet, the player fills the width ---------- */
+@media (max-width: 640px) {
+  .tour-unlock { left: 10px; right: 10px; bottom: 10px; width: auto; }
+  .tp-card { width: calc(100vw - 16px); }
+  .tp-text h2 { font-size: 19px; }
+  .cs-menu, .cs-pop { left: 8px !important; right: 8px; width: auto; }
+  .tour-unlock:not(.mini) .tu-media { display: none; }        /* text and buttons only: the page stays visible */
+  .cv-page .tour-unlock, .cv-page .tour-unlock:not(.mini) { top: auto; bottom: 64px; }
+  .tp-ctl { width: 28px; height: 28px; }
+  .cs-coach { left: 8px; right: 8px; width: auto; }
+  .cv-page .cs-coach { bottom: 64px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-unlock, .tp-card, .tp-badge, .cs-menu, .cs-pop, .cs-task.done .cs-check { animation: none; }
+  .tu-spark, .tp-spot::after, .cs-beacon::after, .tp-next.nudge { animation: none; }
+}

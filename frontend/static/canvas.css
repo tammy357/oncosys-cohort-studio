@@ -533,3 +533,17 @@ details.cv-sec[open] > summary::after { transform: rotate(45deg); }
   .cv-node, .cv-tcard, .cv-pill, .cv-drop { transition: none; }
   .cv-node.flash::after, .cv-in-left, .cv-in-right, .cv-in-up { animation: none; }
 }
+
+/* help panel: tour, practice, docs */
+.cv-learn-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 2px 0 20px; }
+.cv-learn { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; border-radius: 12px; border: 1px solid var(--rule);
+  background: var(--card); cursor: pointer; text-align: left; font: inherit; color: var(--ink); }
+.cv-learn:hover, .cv-learn:focus-visible { border-color: var(--rule-2); background: var(--card-hi); outline: none; }
+.cv-learn-ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--paper-2); }
+.cv-learn-ico svg { width: 15px; height: 15px; }
+.cv-learn b { display: block; font-size: 13px; font-weight: 600; }
+.cv-learn small { display: block; font-size: 11.5px; color: var(--muted); }
+
+/* toasts sit above the floating toolbar, never on it */
+.cv-page .toasts { bottom: 84px; }
+@media (max-width: 760px) { .cv-page .toasts { bottom: 70px; } }

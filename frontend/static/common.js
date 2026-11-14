@@ -253,6 +253,8 @@ export function toast(text, icon = 'check', kind = 'ok') {
 export function clearToasts(kind = 'warn') {
   $$(`#toasts .toast.${kind}`).forEach(t => t.remove());
 }
+/** Tell the practice checklist (tour.js) that someone just did something it teaches: 'fix', 'add', 'clarify'… */
+export function did(what) { document.dispatchEvent(new CustomEvent('cs:did', { detail: { what } })); }
 export const warnToast = text => toast(text, 'triangle-alert', 'warn');
 export const errorToast = text => toast(text, 'circle-alert', 'bad');
 

@@ -895,6 +895,18 @@ details.c-fold:not([open]) > summary { margin-bottom: 0; }
 .waking-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--amber); animation: breathe 1.4s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: .25; transform: scale(.7); } }
 
+/* the top bar never wraps: details give way first, then the page names (icons stay, as on the canvas) */
+.wm-name, .nav a, .status { white-space: nowrap; }
+@media (max-width: 1240px) { .wm-meta, .status-k { display: none; } }
+@media (max-width: 1100px) { .nav a span { display: none; } .nav a { padding: 0 10px; } }
+@media (max-width: 560px) {     /* phones: the bar fits without scrolling sideways */
+  .topbar { gap: 10px; }
+  .wm-name { display: none; }
+  .nav { gap: 0; } .nav a { padding: 0 8px; }
+  .top-right { gap: 6px; }
+  .user-field { padding: 5px 9px; } .user-field input { width: 60px; }
+}
+@media (max-width: 420px) { .user-field svg { display: none; } .user-field input { width: 56px; } }
 @media (max-width: 1080px) {
   .legend { display: none; }
   .specimens { grid-template-columns: repeat(2, minmax(0, 1fr)); }

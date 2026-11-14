@@ -27,3 +27,7 @@ evals/results/
 
 # Opened envelopes are local only
 envelopes/opened/
+
+# Tour narration takes (regenerate with frontend/tour/voice.py)
+frontend/tour/.takes/
+frontend/tour/.frames/

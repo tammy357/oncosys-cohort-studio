@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "voice": {
+    "name": "Brynn",
+    "id": "WWqu8HMRhVJTxkzI",
+    "speed": 0.0,
+    "temp": 0.7
+  },
+  "tours": {
+    "build": {
+      "eyebrow": "Quick tour",
+      "title": "Build a cohort you can defend",
+      "blurb": "Four things that keep your counts honest.",
+      "minutes": 1,
+      "preview": "build-fix",
+      "steps": [
+        {
+          "id": "build-ask",
+          "title": "It asks before it guesses",
+          "body": "If a request could mean two things, you choose, seeing how many samples each answer keeps.",
+          "narration": "If your request could mean two different things, Cohort Studio asks first. Every answer shows how many samples it would keep, so you choose with the numbers in front of you.",
+          "find": {
+            "selector": "#q",
+            "label": "Ask in the search box"
+          },
+          "docs": "questions-instead-of-guesses"
+        },
+        {
+          "id": "build-fix",
+          "title": "Double counts, caught",
+          "body": "Every step shows its count. A join that counts a sample twice is flagged, and fixed in one click.",
+          "narration": "Every step shows exactly how many samples are left. When a join starts counting the same sample twice, it's flagged in pink. One click on Fix it, and every sample counts once again.",
+          "find": {
+            "selector": ".result .flow, .result",
+            "label": "In every result"
+          },
+          "docs": "double-counting"
+        },
+        {
+          "id": "build-verdict",
+          "title": "A verdict with evidence",
+          "body": "Each cohort is rated Ready, Conditional or Blocked, with every check behind it.",
+          "narration": "Each cohort gets an honest verdict: ready, conditional, or blocked. Open it to see every check behind it, and what a person still needs to review.",
+          "find": {
+            "selector": ".result .verdict",
+            "label": "At the top of every result"
+          },
+          "docs": "verdicts-and-checks"
+        },
+        {
+          "id": "build-take",
+          "title": "Take it anywhere",
+          "body": "Download the sample list and a script that rebuilds it exactly, or open it on the canvas.",
+          "narration": "When it's ready, download the sample list, and a Python script that rebuilds the cohort exactly. Or open it on the canvas, and keep shaping it visually.",
+          "find": {
+            "selector": ".result .exports",
+            "label": "Under every result"
+          },
+          "docs": "export"
+        }
+      ]
+    },
+    "canvas": {
+      "eyebrow": "New",
+      "title": "Meet the canvas",
+      "blurb": "Build cohorts visually, with honest counts on every card.",
+      "minutes": 1,
+      "preview": "canvas-add",
+      "steps": [
+        {
+          "id": "canvas-read",
+          "title": "Your cohort as a pipeline",
+          "body": "Each card is one step with the engine's own count. Wires are drawn to scale.",
+          "narration": "This is your cohort as a pipeline. Every card is one step, with the real count from the engine. And every wire is drawn to scale, so you can see where samples drop away.",
+          "find": {
+            "selector": "#cv-stage",
+            "label": "The canvas"
+          },
+          "docs": "reading-the-canvas"
+        },
+        {
+          "id": "canvas-fix",
+          "title": "See why, then fix it",
+          "body": "A join that adds rows turns pink. X-ray a real patient to see why, then fix it in one click.",
+          "narration": "A join that adds extra rows turns pink. Tap See why to X-ray a real patient, and watch their slides become rows. Then one click on Fix, and every sample counts once.",
+          "find": {
+            "selector": ".cv-pill",
+            "label": "The pink pill under a join"
+          },
+          "docs": "fixing-a-double-count"
+        },
+        {
+          "id": "canvas-add",
+          "title": "Drop in any step",
+          "body": "Press Add, then drag a block onto any wire. Any join it needs is added for you.",
+          "narration": "Press Add to open the blocks. Drag one onto any wire, and it slots right in. If it needs data from another table, the join is added for you.",
+          "find": {
+            "selector": "#cv-toolbar .tb[title='Add']",
+            "label": "Add, in the toolbar"
+          },
+          "docs": "adding-steps"
+        },
+        {
+          "id": "canvas-lanes",
+          "title": "See what a row means",
+          "body": "Grain lanes place each card by what one row stands for. A double-counting join drops a lane.",
+          "narration": "Switch on grain lanes to see what one row stands for: a patient, a sample, or several rows per sample. A join that double counts drops a lane, and its fix brings it back.",
+          "find": {
+            "selector": "#cv-toolbar .tb[title='Grain lanes']",
+            "label": "Grain lanes, in the toolbar"
+          },
+          "docs": "grain-lanes"
+        },
+        {
+          "id": "canvas-code",
+          "title": "Code you can check",
+          "body": "Open Code for SQL, Python or the raw steps. The SQL is run and checked against the engine.",
+          "narration": "Open Code to see the same cohort as SQL, Python, or the raw steps. The SQL isn't just written. It's run, and checked against the engine, step by step.",
+          "say": "Open Code to see the same cohort as S.Q.L., Python, or the raw steps. The S.Q.L. isn't just written. It's run, and checked against the engine, step by step.",
+          "find": {
+            "selector": "#cv-toolbar .tb[title='Code']",
+            "label": "Code, in the toolbar"
+          },
+          "docs": "code-and-verified-sql"
+        }
+      ]
+    },
+    "compare": {
+      "eyebrow": "Quick tour",
+      "title": "Compare two cohorts",
+      "blurb": "Who they share, and how they differ.",
+      "minutes": 1,
+      "preview": "compare-overlap",
+      "steps": [
+        {
+          "id": "compare-pick",
+          "title": "Any two cohorts",
+          "body": "Pick saved cohorts, favourites or two versions of one. Both rerun on the same frozen data.",
+          "narration": "Pick any two cohorts: saved ones, favourites, or two versions of the same cohort. Both are rerun on the same frozen data, so the comparison is fair.",
+          "find": {
+            "selector": "#slots, .slots",
+            "label": "The two slots at the top"
+          },
+          "docs": "compare"
+        },
+        {
+          "id": "compare-overlap",
+          "title": "Who they share",
+          "body": "The overlap drawn to scale, and plain sentences on what the numbers say.",
+          "narration": "See exactly who the two cohorts share, drawn to scale, with plain sentences that say what the numbers mean.",
+          "docs": "compare"
+        },
+        {
+          "id": "compare-outcomes",
+          "title": "How they differ",
+          "body": "Who is in each, the data each has, and survival curves with one record per patient.",
+          "narration": "Then see how they differ: who is in each, which data they have, and survival curves, with one record per patient.",
+          "docs": "compare"
+        }
+      ]
+    }
+  },
+  "practice": {
+    "title": "Learn by doing",
+    "blurb": "Five short tasks. Each one ticks itself off when you do it.",
+    "tasks": [
+      {
+        "id": "clarify",
+        "title": "Answer a clarifying question",
+        "hint": "Ask for HR+ / HER2− tumours and pick a definition.",
+        "page": "build",
+        "show": "build-ask",
+        "target": ".question .option",
+        "scroll": true,
+        "coach": "Pick one of the answers: each shows how many samples it keeps."
+      },
+      {
+        "id": "fix",
+        "title": "Fix a double count",
+        "hint": "Load the double-count demo and press Fix.",
+        "page": "canvas",
+        "show": "canvas-fix",
+        "target": ".cv-pill button",
+        "scroll": false,
+        "coach": "Press Fix on the pink pill under the join."
+      },
+      {
+        "id": "add",
+        "title": "Drag a block onto a wire",
+        "hint": "Press Add, then drop a block between two cards.",
+        "page": "canvas",
+        "show": "canvas-add",
+        "target": "#cv-library .cv-block[data-search^=\"er status\"]",
+        "scroll": false,
+        "coach": "Drag ER status from the blocks onto a number on a wire.",
+        "coachAt": "right"
+      },
+      {
+        "id": "verified",
+        "title": "Check the SQL is verified",
+        "hint": "Open Code and look for the Verified badge.",
+        "page": "canvas",
+        "show": "canvas-code",
+        "target": ".cv-verify",
+        "scroll": false,
+        "coach": "The Code panel is open: look for the Verified badge above the SQL."
+      },
+      {
+        "id": "compare",
+        "title": "Compare two cohorts",
+        "hint": "Save two cohorts, then pick both on Compare.",
+        "page": "compare",
+        "show": "compare-pick",
+        "target": "#c-overlap .venn, .slot.empty-slot",
+        "scroll": true,
+        "coach": "Pick a cohort for A and another for B at the top."
+      }
+    ]
+  }
+}

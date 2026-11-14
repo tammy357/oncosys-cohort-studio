@@ -5,7 +5,8 @@
 // the Build page and the AI use; the server runs them with the same engine (POST /api/canvas/evaluate), so every
 // number on a card is the engine's.
 import { $, $$, h, ic, paintIcons, api, fmt, rich, store, session, toast, warnToast, errorToast, initChrome,
-  showModelStatus, loadMeta, verdictLabel } from './common.js';
+  showModelStatus, loadMeta, verdictLabel, did } from './common.js';
+import { initTour, openTour, openPractice } from './tour.js';
 import { createGraph } from './canvas-graph.js';
 import { OPS, LAYERS, SLIDE_KINDS, FROZEN, TABLE_ICON, describe, controls, stepFor } from './canvas-controls.js';
 import { CHARS, mixBar, compositionPanel, codeView, verifyBadge, galleryPanel, openXray, groupLabel } from './canvas-views.js';
@@ -93,7 +94,10 @@ function addBlock(block, slot) {
     slot = 0;
   }
   const step = stepFor(S.meta, block);
-  if (step) insertStep(step, slot ?? S.addSlot ?? S.steps.length);
+  const at = slot ?? S.addSlot ?? S.steps.length;
+  if (!step) return;
+  insertStep(step, at);
+  if (at < S.steps.length - 1) did('add');               // dropped between two cards (practice: "drag a block onto a wire")
 }
 function removeStep(cid) {
   const i = S.steps.findIndex(s => s._cid === cid);
@@ -128,6 +132,7 @@ function applyFix(cid) {
   changed({ soon: true });
   renderPanel();
   toast('Fixed: every sample counts once', 'wand-sparkles');
+  did('fix');
 }
 function loadSteps(steps, note = '') {
   record();
@@ -194,6 +199,7 @@ async function fetchCode() {
   try {
     const res = await api('/api/canvas/code', { method: 'POST', body: { steps: forServer(), verify: true } });
     if (seq === S.codeSeq) S.code = res;
+    if (seq === S.codeSeq && res.verified && res.verified.ok && S.panel === 'code') did('verified');
   } catch (e) {
     if (seq === S.codeSeq) S.code = { sql: `-- ${e.message}`, python: `# ${e.message}`, json: '{}', lines: {}, verified: { ok: null, reason: e.message } };
   }
@@ -523,7 +529,13 @@ function codePanel() {
   return h('div', { class: `cv-codewrap${loading ? ' loading' : ''}` }, bar, meta, body);
 }
 function helpPanel() {
+  const learn = (icon, label, sub, on) => h('button', { type: 'button', class: 'cv-learn', onclick: on }, h('span', { class: 'cv-learn-ico' }, ic(icon)),
+    h('span', {}, h('b', {}, label), h('small', {}, sub)));
   return h('div', { class: 'cv-pad' },
+    h('div', { class: 'cv-learn-row' },
+      learn('play-circle', 'Take the tour', '5 steps · 1 min', () => openTour('canvas')),
+      learn('list-checks', 'Practice', 'Learn by doing', () => openPractice()),
+      learn('book-open', 'Docs', 'Every feature', () => { location.href = '/docs#canvas'; })),
     h('p', { class: 'cv-sec-title' }, 'On the canvas'),
     h('ul', { class: 'cv-help-list' },
       h('li', {}, h('i', { class: 'cv-lg' }), 'Samples flowing on (the width is to scale)'),
@@ -974,5 +986,12 @@ async function init() {
   updateChrome();
   if (params.get('q')) { $('#cv-q').value = params.get('q'); toggleAsk(true); ask(params.get('q')); }
   evaluate();
+  // tours, practice and the help menu. Practice set-ups load the demo with loadTemplate, so Ctrl+Z brings back your canvas.
+  const demo = () => { if (!(S.ev && S.ev.steps && S.ev.steps.some(x => x.inflated))) loadTemplate(S.cat.templates[0]); };
+  initTour({ page: 'canvas', shortcuts: () => showPanel('help'), setups: {
+    fix: demo,
+    add: () => { if (!S.steps.length) loadTemplate(S.cat.templates[0]); setTimeout(() => openLibrary(null), 450); },
+    verified: () => { if (!S.steps.length) loadTemplate(S.cat.templates[0]); showPanel('code'); },
+  } });
 }
 init();

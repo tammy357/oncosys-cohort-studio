@@ -7,9 +7,12 @@
     { "source": "/api/:path*", "destination": "https://api.maplestreettax.site/api/:path*" },
     { "source": "/static/:path*", "destination": "/:path*" },
     { "source": "/compare", "destination": "/compare.html" },
-    { "source": "/canvas", "destination": "/canvas.html" }
+    { "source": "/canvas", "destination": "/canvas.html" },
+    { "source": "/docs", "destination": "/docs.html" }
   ],
   "headers": [
+    { "source": "/docs.md", "headers": [{ "key": "Content-Type", "value": "text/markdown; charset=utf-8" }] },
+    { "source": "/llms.txt", "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }] },
     {
       "source": "/(.*)",
       "headers": [

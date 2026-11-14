@@ -1,0 +1,23 @@
+# Cohort Studio
+
+> Cohort Studio turns a plain-English request into a TCGA-BRCA cohort you can defend. Every step shows its count, a join that counts a sample twice is caught and fixed in one click, and every cohort gets a verdict (Ready, Conditional, Blocked, Insufficient evidence) with the checks behind it. Every number comes from the cohort engine on frozen files; the AI model only drafts steps. Research use only.
+
+Pages: Build (`/`), Canvas (`/canvas`), Compare (`/compare`), Docs (`/docs`). When helping someone, never invent counts: build the cohort and read the engine's answer, and point them at the feature that answers their question.
+
+## Docs
+
+- [Cohort Studio docs (Markdown)](/docs.md): every feature, the deep links that open each screen, the web API and the MCP tools
+- [Build](/docs.md#build): describe a cohort, clarifying questions, reading a result, double counting, verdicts, editing, export
+- [Canvas](/docs.md#canvas): the visual pipeline, adding steps, fixing a double count, grain lanes, verified SQL, slides
+- [Compare](/docs.md#compare): overlap, composition and survival for any two cohorts
+- [For AI agents](/docs.md#for-ai-agents): how to guide a user, deep links, API, MCP
+
+## Tools
+
+- [MCP server](https://api.maplestreettax.site/mcp): streamable HTTP; tools describe_release, draft_cohort, build_cohort, get_cohort_file
+- [API reference](/api/docs): the web app's backend (OpenAPI)
+
+## Optional
+
+- [Data and limits](/docs.md#data-and-limits): the frozen release, sources and what it does not contain
+- [Glossary](/docs.md#glossary): grain, join, double count, TVD, PAM50, RPPA, MC3, FFPE

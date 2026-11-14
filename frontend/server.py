@@ -86,7 +86,7 @@ def create_app(settings=None, client=None, storage=None):
     async def _revalidate_assets(request: Request, call_next):
         # The page and its assets are small: always revalidate (ETag) so an update is never hidden by a stale cache.
         response = await call_next(request)
-        if request.url.path in ("/", "/compare", "/canvas") or request.url.path.startswith("/static/"):
+        if request.url.path in ("/", "/compare", "/canvas", "/docs", "/docs.md", "/llms.txt") or request.url.path.startswith("/static/"):
             response.headers["cache-control"] = "no-cache"
         return response
 
@@ -228,6 +228,19 @@ def create_app(settings=None, client=None, storage=None):
     @app.get("/canvas")
     def canvas_page():
         return FileResponse(STATIC / "canvas.html")
+
+    # The docs: a page for people, and the same Markdown (plus an llms.txt index) for AI agents.
+    @app.get("/docs")
+    def docs_page():
+        return FileResponse(STATIC / "docs.html")
+
+    @app.get("/docs.md")
+    def docs_markdown():
+        return FileResponse(STATIC / "docs.md", media_type="text/markdown; charset=utf-8")
+
+    @app.get("/llms.txt")
+    def llms_txt():
+        return FileResponse(STATIC / "llms.txt", media_type="text/plain; charset=utf-8")
 
     @app.get("/api/canvas/catalog")
     def canvas_catalog():
