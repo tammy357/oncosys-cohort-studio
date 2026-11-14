@@ -862,6 +862,42 @@ button[data-tip], a[data-tip], summary[data-tip] { cursor: pointer; }
 .alert.warn { background: var(--warn-w); border-color: color-mix(in srgb, var(--warn) 22%, transparent); } .alert.warn > svg { color: var(--warn); }
 .alert.info { background: var(--card); border-color: var(--rule); color: var(--ink-2); } .alert.info > svg { color: var(--haem); }
 .alert.ok { background: var(--ok-w); border-color: color-mix(in srgb, var(--ok) 22%, transparent); } .alert.ok > svg { color: var(--ok); }
+/* "Fix it": what it will do (under the double-count alert) and what it changed (after the click) */
+.fix-explain { display: grid; gap: 6px; margin: -2px 0 2px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; color: var(--ink-2);
+  border: 1px dashed color-mix(in srgb, var(--bad) 30%, transparent); }
+.fx-row { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 10px; }
+.fx-k { font-size: 11.5px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+.fx-ex { display: block; color: var(--muted); margin-top: 2px; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.fix-receipt { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 14px; background: var(--ok-w);
+  border: 1px solid color-mix(in srgb, var(--ok) 22%, transparent); }
+.fr-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.fr-head > svg { width: 16px; height: 16px; color: var(--ok); align-self: center; }
+.fx-table { width: 100%; margin: 10px 0 6px; border-collapse: collapse; font-size: 13.5px; }
+.fx-table th, .fx-table td { text-align: left; padding: 5px 8px; border-top: 1px solid color-mix(in srgb, var(--ok) 18%, transparent); vertical-align: top; }
+.fx-table thead th { border-top: 0; font-size: 11.5px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.fx-table tbody th { font-weight: 600; white-space: nowrap; color: var(--ink-2); }
+.fx-table td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fr-note { margin: 6px 0 0; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+@media (max-width: 560px) { .fx-row { grid-template-columns: 1fr; gap: 2px; } }
+/* a join fixed before the numbers were shown: the notice and the samples it had counted more than once */
+.fixed-notice { display: grid; gap: 6px; }
+.fn-body { display: grid; gap: 8px; padding: 2px 12px 4px 40px; font-size: 13.5px; color: var(--ink-2); }
+.fn-body p { margin: 0; }
+@media (max-width: 560px) { .fn-body { padding-left: 12px; } }
+/* Compare: two versions of one cohort */
+.slot-ver { font: inherit; font-size: 12px; font-weight: 650; letter-spacing: .04em; color: var(--ink-2); background: var(--card);
+  border: 1px solid var(--rule-2); border-radius: 8px; padding: 3px 6px; max-width: 100%; }
+.slot-vbtn { margin-top: 10px; justify-self: start; }
+.vdiff { display: grid; gap: 12px; max-width: 980px; }
+.vd-log { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14.5px; color: var(--ink-2); }
+.vd-log li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.vd-src { font-size: 11.5px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--eosin); }
+.vd-table { margin: 0; table-layout: fixed; }
+.vd-table thead th:first-child { width: 90px; }
+.vd-table th, .vd-table td { border-top-color: var(--rule); }
+.vd-bad { color: var(--bad); }
+.vd-note { margin: 0; font-size: 14px; color: var(--muted); }
+.venn-cap { max-width: 460px; margin: 8px auto 0; font-size: 13px; text-align: center; }
 .facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
 .fact { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13px; color: var(--ink-2);
   background: var(--paper-2); }

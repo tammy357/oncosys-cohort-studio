@@ -593,6 +593,116 @@ function alertBar(kind, icon, text, tip, ...actions) {
   return h('div', { class: `alert ${kind}`, role: kind === 'bad' ? 'alert' : null }, ic(icon), t, actions.length ? h('span', { class: 'alert-actions' }, actions) : null);
 }
 
+/** Save rows as a CSV file in the browser. */
+function downloadCsv(name, header, rows) {
+  const cell = v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const text = [header, ...rows].map(r => r.map(cell).join(',')).join('\n') + '\n';
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  const a = h('a', { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** The fix_log entry for a step of the current spec (a fix that inserted a step shifts later steps down by one). */
+function fixLogFor(res, index) {
+  let inserted = 0;
+  for (const f of [...(res.spec.fix_log || [])].sort((a, b) => a.step - b.step)) {
+    if (f.step + inserted === index + 1) return f;
+    inserted += f.inserted_step ? 1 : 0;
+  }
+  return null;
+}
+
+/** A join that counted samples more than once and was fixed before these numbers were shown: say so up front, and
+ *  list the samples it had counted more than once behind a toggle (searchable, scrolling) and a CSV download. */
+function fixedNotice(res, st) {
+  const f = st.fixed;
+  const extra = f.rows_before - f.samples;
+  const per = (fixLogFor(res, st.index) || {}).rows_per_sample || {};
+  const list = Object.entries(per).map(([sid, n]) => ({ sid, patient: sid.slice(0, 12), n }));
+  const times = f.max_rows > 2 ? `2 to ${f.max_rows} times` : 'twice';
+  const fixV = [...(res.versions || [])].reverse().find(v => v.source === 'fix');
+  const panel = h('div', { class: 'fx-list', hidden: true });
+  let built = false;
+  const toggle = h('button', { type: 'button', class: 'fx-all', 'aria-expanded': 'false' }, `Show the ${fmt(list.length)} samples`);
+  toggle.addEventListener('click', () => {
+    const open = panel.hidden;
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.textContent = open ? 'Hide the list' : `Show the ${fmt(list.length)} samples`;
+    if (!open || built) return;
+    built = true;   // build the table on first open only
+    const body = h('tbody');
+    const count = h('span', { class: 'muted' });
+    const render = q => {
+      const rows = q ? list.filter(r => `${r.sid} ${r.patient}`.toLowerCase().includes(q)) : list;
+      body.replaceChildren(...rows.map(r => h('tr', {}, h('td', {}, h('code', {}, r.sid)), h('td', {}, h('code', {}, r.patient)), h('td', {}, String(r.n)))));
+      count.textContent = `${fmt(rows.length)} of ${fmt(list.length)}`;
+    };
+    const search = h('input', { type: 'search', class: 'fx-search', placeholder: 'Find a sample or patient barcode', 'aria-label': 'Filter the samples counted more than once' });
+    search.addEventListener('input', () => render(search.value.trim().toLowerCase()));
+    panel.append(h('div', { class: 'fx-tools' }, search, count),
+      h('div', { class: 'fx-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Sample'), h('th', {}, 'Patient'),
+        h('th', { title: 'Rows this sample had at this step before the fix' }, 'Rows before the fix'))), body)));
+    render('');
+  });
+  const download = h('button', { type: 'button', class: 'fx-all', title: 'Every sample this step counted more than once, as a CSV file' }, 'Download (CSV)');
+  download.addEventListener('click', () => downloadCsv(`counted_more_than_once_step_${st.index + 1}.csv`,
+    ['sample_id', 'patient_id', 'step', 'rows_before_fix', 'still_in_cohort'], list.map(r => [r.sid, r.patient, st.index + 1, r.n, 'yes'])));
+  return h('div', { class: 'fixed-notice' },
+    alertBar('ok', 'shield-check', `Double counting caught and fixed before these numbers: step ${st.index + 1} made ${fmt(f.rows_before)} rows for ${fmt(f.samples)} samples.`,
+      `${f.fix}\nThe fix is recorded in cohort_spec.json (fix_log) and audit_trail.csv.`),
+    h('div', { class: 'fn-body' },
+      h('p', {}, `${fmt(list.length || f.doubled)} samples had more than one matching row (counted ${times}), adding ${fmt(extra)} extra rows. `,
+        h('b', {}, 'No sample or patient was removed:'), ' each of them is still in the cohort, now counted once.'),
+      h('div', { class: 'fx-links' }, list.length ? toggle : null, list.length ? download : null,
+        fixV && fixV.n > 1 ? h('a', { class: 'fx-all', href: `/compare?a=v:${res.search_id}:${fixV.n - 1}&b=v:${res.search_id}:${fixV.n}` }, 'Compare with the steps before the fix') : null),
+      panel));
+}
+
+/** Before "Fix it": why the step counts samples twice and exactly what the fix will change, in view (not only in a tooltip). */
+function fixExplain(st) {
+  const ex = (st.duplicate_examples || []).slice(0, 3).map(e => `${e.sample_id} appears ${e.rows} times`);
+  const row = (label, ...kids) => h('div', { class: 'fx-row' }, h('span', { class: 'fx-k' }, label), h('span', { class: 'fx-v' }, ...kids));
+  return h('div', { class: 'fix-explain', 'aria-label': `What Fix it will do to step ${st.index + 1}` },
+    row('Why', rich(st.inflation_note || `Step ${st.index + 1} makes more rows than there are samples.`),
+      ex.length ? h('span', { class: 'fx-ex' }, `For example: ${ex.join('; ')}.`) : null),
+    row('Fix it will', rich(st.fix || 'Keep one row per sample after this step.')),
+    row('Then', `It re-runs the steps, shows what changed, and saves the result as a new version. The steps you have now stay in the history, so you can go back.`));
+}
+
+/** After "Fix it": the step before and after, the counts before and after, whether the samples changed, and the new version. */
+function fixReceipt(before, after, st) {
+  const i = st.index;
+  const labels = x => x.spec_labels || [];
+  const added = (after.spec.steps || []).length > (before.spec.steps || []).length ? labels(after)[i + 1] : null;
+  const had = new Set(before.cohort_ids || []), has = new Set(after.cohort_ids || []);
+  const gained = [...has].filter(x => !had.has(x)).length, lost = [...had].filter(x => !has.has(x)).length;
+  const b = before.final, a = after.final;
+  const tr = (k, was, now) => h('tr', {}, h('th', { scope: 'row' }, k), h('td', {}, was), h('td', {}, now));
+  const vers = after.versions || [];
+  const cur = vers.length ? vers[vers.length - 1] : null;
+  const samples = gained || lost
+    ? `${plural(gained, 'sample', 'samples')} added and ${plural(lost, 'sample', 'samples')} removed: check the step still matches what you meant.`
+    : `The same ${fmt(a.samples)} samples as before: only the ${fmt(b.rows - a.rows)} extra rows were removed.`;
+  return h('div', { class: 'fix-receipt', role: 'status' },
+    h('div', { class: 'fr-head' }, ic('circle-check'), h('b', {}, `Step ${i + 1} fixed. `), rich(st.fix || 'Every sample is now counted once.')),
+    h('table', { class: 'fx-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', { scope: 'col' }, 'Before'), h('th', { scope: 'col' }, 'After'))),
+      h('tbody', {},
+        tr(`Step ${i + 1}`, rich(labels(before)[i] || st.label), rich(labels(after)[i] || '')),
+        added ? tr(`Step ${i + 2}`, h('span', { class: 'muted' }, 'none (added by the fix)'), rich(added)) : null,
+        tr('Rows', fmt(b.rows), fmt(a.rows)),
+        tr('Samples', fmt(b.samples), fmt(a.samples)),
+        tr('Patients', fmt(b.patients), fmt(a.patients)))),
+    h('p', { class: 'fr-note' }, samples),
+    h('p', { class: 'fr-note' }, cur ? `Saved as version ${cur.n}; version ${cur.n - 1} has the steps before the fix. ` : '',
+      'The fix is also recorded in cohort_spec.json (fix_log) when you export. ',
+      cur ? h('button', { type: 'button', class: 'btn small', onclick: () => openEditor(after) }, ic('history'), 'See versions') : null,
+      cur && cur.n > 1 ? h('a', { class: 'btn small', href: `/compare?a=v:${after.search_id}:${cur.n - 1}&b=v:${after.search_id}:${cur.n}` },
+        ic('git-compare'), 'Compare before and after') : null));
+}
+
 function checkPills(v) {
   const checks = [...v.checks].sort((a, b) => (CHECK_ORDER[a.status] ?? 9) - (CHECK_ORDER[b.status] ?? 9));
   return h('div', { class: 'checks-strip', role: 'list', 'aria-label': 'Checks behind the verdict' }, checks.map(c => tipped(
@@ -706,21 +816,25 @@ function renderResult(res) {
       'These parts of the request could be read more than one way, and nobody has confirmed the reading the steps use. Edit the steps if you meant another.',
       ...(unparsed.length && !res.unparsed_confirmed ? [] : [confirmButton('That’s what I meant')])));
   }
+  // joins fixed before these numbers (runs fix double counting automatically): say so, and which samples it touched
+  for (const st of res.steps.filter(x => x.fixed)) alerts.append(fixedNotice(res, st));
+  // a join still counting samples more than once (cohorts saved before fixes were automatic): offer the fix
   for (const st of res.steps.filter(x => x.inflated)) {
     const ex = (st.duplicate_examples || []).slice(0, 3).map(e => `${e.sample_id} appears ${e.rows} times`);
-    const fix = h('button', { class: 'btn small eosin', onclick: async e => {
+    const fix = tipped(h('button', { class: 'btn small eosin', onclick: async e => {
       e.currentTarget.disabled = true;
       try {
         const r = await api(`/api/searches/${res.search_id}/fix`, { method: 'POST', body: { step_index: st.index } });
-        // say what the fix changed, not just that it happened ("Keep each sample once if it has at least one matching slide, ...")
-        replaceResult(box, r, `Step ${st.index + 1} fixed: ${st.fix || 'every sample is now counted once.'}`);
+        // show what the fix changed: the step and the counts before and after, and the version it was saved as
+        replaceResult(box, r, fixReceipt(res, r, st));
         toast('Double count fixed');
         did('fix');
         refreshHistory();
       } catch (err) { errorToast(err.message); }
-    } }, ic('wrench'), 'Fix it');
+    } }, ic('wrench'), 'Fix it'), `Changes step ${st.index + 1} only: ${st.fix || 'keeps one row per sample'}\nSaved as a new version, so you can go back.`);
     alerts.append(alertBar('bad', 'copy', `Step ${st.index + 1} counts ${fmt(st.rows - st.samples)} rows twice.`,
       [st.inflation_note, ...ex, st.fix ? `Fix: ${st.fix}` : ''].filter(Boolean).join('\n'), fix));
+    alerts.append(fixExplain(st));
   }
   for (const st of res.steps.filter(x => x.selection)) {
     const exs = st.selection.examples.map(x => `${x.patient_id}: kept ${x.kept} (${x.kept_type}), dropped ${x.dropped.join(', ')}`);
@@ -762,6 +876,7 @@ function resultToasts(res) {
   else if (res.verdict.verdict === 'Blocked') errorToast(`Blocked: ${(res.verdict.checks.find(c => c.status === 'fail') || {}).name || 'see the checks'}.`);
   else if (res.unparsed && res.unparsed.length && !res.unparsed_confirmed) warnToast('Part of the request wasn’t turned into steps. Please check it.');
   else if (res.unconfirmed && res.unconfirmed.length && !res.unparsed_confirmed) warnToast('Part of the request could be read more than one way. Please confirm the reading.');
+  else if (res.auto_fixed) toast('Double counting found and fixed automatically', 'shield-check');
 }
 function showResult(panel, res) {
   setPanel(panel, renderResult(res));
@@ -770,7 +885,8 @@ function showResult(panel, res) {
 }
 function replaceResult(box, res, okNote) {
   const fresh = renderResult(res);
-  if (okNote) fresh.insertBefore(alertBar('ok', 'circle-check', okNote), fresh.children[2] || null);
+  // okNote: a one-line message, or a ready-made block (the "Fix it" summary)
+  if (okNote) fresh.insertBefore(typeof okNote === 'string' ? alertBar('ok', 'circle-check', okNote) : okNote, fresh.children[2] || null);
   const panel = box.parentElement;
   panel.replaceChildren(fresh);
   animatePanel(panel);

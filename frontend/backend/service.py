@@ -389,6 +389,18 @@ class Service:
             if log:
                 spec["fix_log"] = log
             spec["steps"] = steps
+        # A join that counts samples more than once is fixed before any number is shown (as the command line does),
+        # with the same minimal change "Fix it" made. The steps as drafted are kept as their own version, so the
+        # fix is visible in the history and Compare can show before and after.
+        before = None
+        raw = engine.run(spec, self.store)
+        if any(s.inflated for s in raw.steps):
+            fixed, changes = engine.apply_fixes(spec, raw)
+            v = self._verdict(raw)
+            before = {"spec": spec, "changes": changes,
+                      "summary": {"n_samples": len(raw.cohort_ids), "n_patients": raw.final_patients,
+                                  "verdict": v.verdict, "reason": v.reason[:500]}}
+            spec = fixed
         payload = self._evaluate(spec)
         payload["rechecked"] = rechecked
         summary = self._summary(payload)
@@ -399,12 +411,22 @@ class Service:
             self.db.update_search(user, search_id, spec, summary)
         else:
             search_id = self.db.add_search(user, query, mode, spec, summary, draft_id)
-        latest = self.db.list_versions(user, search_id)
-        if not latest or not same_steps(self.db.get_version(user, search_id, latest[-1]["n"])["spec"]["steps"], spec["steps"]):
-            self.db.add_version(user, search_id, spec, summary, source or ("draft" if not existing else "edit"),
-                                note or ("First run" if not existing else ""))
+        source = source or ("draft" if not existing else "edit")
+        note = note or ("First run" if not existing else "")
+        if before:
+            self._add_version_if_changed(user, search_id, before["spec"], before["summary"], source,
+                                         f"{note + ': ' if note else ''}as drafted, counting samples more than once")
+            payload["auto_fixed"] = {"changes": before["changes"], "before_version": self.db.list_versions(user, search_id)[-1]["n"]}
+            source, note = "fix", "Fixed automatically. " + "; ".join(before["changes"])
+        self._add_version_if_changed(user, search_id, spec, summary, source, note)
         payload.update(search_id=search_id, query=query, mode=mode, versions=self.db.list_versions(user, search_id))
         return payload
+
+    def _add_version_if_changed(self, user, search_id, spec, summary, source, note):
+        """Save the spec as a new version unless its steps are the same as the latest version's."""
+        latest = self.db.list_versions(user, search_id)
+        if not latest or not same_steps(self.db.get_version(user, search_id, latest[-1]["n"])["spec"]["steps"], spec["steps"]):
+            self.db.add_version(user, search_id, spec, summary, source, note)
 
     def open_search(self, user, search_id):
         s = self._search(user, search_id)

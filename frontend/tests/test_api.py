@@ -73,16 +73,26 @@ def test_question_answer_run_and_history(client):
     assert hist[0]["query"] == "hr positive tumours" and hist[0]["n_samples"] == 4
 
 
-def test_inflation_blocks_export_until_fixed(client):
+def test_run_fixes_double_counting_up_front(client):
+    # fixture: patients 1 and 6 each have two diagnostic slides, so the drafted slide join makes 8 rows for 6 samples
     d = client.post("/api/draft", json={"query": "tumours with a diagnostic slide"}).json()
+    assert d["spec"]["steps"][-1]["mode"] == "rows"                      # drafted the plain way
     res = client.post("/api/run", json={"spec": d["spec"], "query": "slides"}).json()
-    assert not res["exportable"] and any(s["inflated"] for s in res["steps"])
+    assert res["exportable"] and not any(s["inflated"] for s in res["steps"])
+    assert res["final"]["rows"] == res["final"]["samples"] == 6
+    assert len(res["auto_fixed"]["changes"]) == 1 and res["auto_fixed"]["before_version"] == 1
+    fixed = res["steps"][-1]["fixed"]
+    assert (fixed["rows_before"], fixed["samples"], fixed["doubled"]) == (8, 6, 2)
+    assert res["spec"]["fix_log"][0]["rows_per_sample"] == {"TCGA-ZZ-0001-01": 2, "TCGA-ZZ-0006-01": 2}
+    # both states are versions: as drafted (counting twice), then fixed automatically
+    assert [(v["n"], v["source"]) for v in res["versions"]] == [(1, "draft"), (2, "fix")]
+    assert res["versions"][0]["verdict"] == "Blocked" and res["versions"][1]["verdict"] == res["verdict"]["verdict"]
+    assert res["versions"][1]["note"].startswith("Fixed automatically.")
     sid = res["search_id"]
-    assert client.get(f"/api/searches/{sid}/files/cohort_samples.csv").status_code == 409
-    fixed = client.post(f"/api/searches/{sid}/fix", json={}).json()
-    assert fixed["exportable"] and fixed["final"]["rows"] == fixed["final"]["samples"]
     csv = client.get(f"/api/searches/{sid}/files/cohort_samples.csv").text.strip().splitlines()
-    assert csv[0] == "sample_id" and len(csv) - 1 == len(set(csv[1:])) == fixed["final"]["samples"]
+    assert csv[0] == "sample_id" and len(csv) - 1 == len(set(csv[1:])) == 6
+    # nothing is left to fix by hand
+    assert client.post(f"/api/searches/{sid}/fix", json={}).status_code == 400
 
 
 def test_cannot_answer_and_rules_fallback(client):
@@ -141,6 +151,33 @@ def test_compare_two_cohorts(client):
     assert d["outcomes"]["os"]["a"]["n"] >= 1 and d["summary"]
     assert client.get("/api/compare", params={"a": f"s:{a}", "b": f"s:{a}"}).status_code == 400
     assert client.get("/api/compare", params={"a": f"s:{a}", "b": "s:9999"}).status_code == 404
+
+
+def test_compare_versions_before_and_after_fix_it(client):
+    # fixture: patients 1 and 6 each have two diagnostic slides, so the slide join makes 8 rows for 6 samples
+    slides = {"op": "join", "table": "slides", "key": "sample_id", "mode": "rows", "slide_kinds": ["diagnostic (FFPE)"]}
+    sid = _run(client, [PT, slides], "tumours with a diagnostic slide")   # fixed automatically: v1 as drafted, v2 fixed
+    d = client.get("/api/compare", params={"a": f"v:{sid}:1", "b": f"v:{sid}:2"}).json()
+    v = d["versions"]
+    assert (v["a"], v["b"], v["newer"]) == (1, 2, "b")
+    assert [c["source"] for c in v["changes"]] == ["fix"] and "Keep each sample once" in v["changes"][0]["note"]
+    assert (d["a"]["n_rows"], d["b"]["n_rows"], d["a"]["n_samples"], d["b"]["n_samples"]) == (8, 6, 6, 6)
+    assert (d["a"]["verdict"], d["a"]["inflated"], d["b"]["inflated"]) == ("Blocked", True, False)
+    [changed] = d["protocol"]["changed"]
+    assert changed["step"] == 2 and "one row per match" in changed["a"] and "keep each sample once" in changed["b"]
+    assert (d["overlap"]["only_a"], d["overlap"]["only_b"]) == (0, 0)          # samples: identical
+    rows = d["overlap_rows"]                                                   # rows: the 2 extra rows are only in v1
+    assert (rows["basis"], rows["a"], rows["b"], rows["shared"], rows["only_a"], rows["only_b"]) == ("rows", 8, 6, 6, 2, 0)
+    assert rows["samples_in_both"] == 6 and rows["jaccard"] == 0.75
+    text = " ".join(d["summary"])
+    assert "versions 1 and 2 of the same cohort" in text and "came from Fix it" in text
+    assert "A has 8 for 6 samples (2 more than once)" in text and "exactly the same 6 samples" in text
+    swapped = client.get("/api/compare", params={"a": f"v:{sid}:2", "b": f"v:{sid}:1"}).json()["versions"]
+    assert (swapped["a"], swapped["b"], swapped["newer"]) == (2, 1, "a") and len(swapped["changes"]) == 1
+    # two different saved cohorts aren't versions of one cohort
+    other = _run(client, [PT, JC, F("er_status", "in", ["Positive"])], "ER-positive")
+    plain = client.get("/api/compare", params={"a": f"s:{sid}", "b": f"s:{other}"}).json()
+    assert plain["versions"] is None and plain["overlap_rows"] is None         # different cohorts: compared by samples
 
 
 def test_compare_insights_check_numbers(tmp_path):
