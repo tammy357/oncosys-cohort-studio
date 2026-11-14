@@ -6,7 +6,8 @@
   "rewrites": [
     { "source": "/api/:path*", "destination": "https://api.maplestreettax.site/api/:path*" },
     { "source": "/static/:path*", "destination": "/:path*" },
-    { "source": "/compare", "destination": "/compare.html" }
+    { "source": "/compare", "destination": "/compare.html" },
+    { "source": "/canvas", "destination": "/canvas.html" }
   ],
   "headers": [
     {

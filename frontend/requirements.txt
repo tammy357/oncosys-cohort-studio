@@ -3,4 +3,5 @@ fastapi>=0.110
 uvicorn>=0.27
 sqlalchemy>=2.0
 httpx>=0.27          # FastAPI's test client (python -m pytest frontend/tests)
+duckdb>=1.1          # the canvas's SQL view: runs the generated SQL to check it against the engine (optional)
 # Postgres instead of the local SQLite file (optional): pip install "psycopg[binary]>=3.1"

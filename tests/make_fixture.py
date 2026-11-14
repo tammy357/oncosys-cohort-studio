@@ -79,8 +79,9 @@ def build(root, collection_days=False):
         mut.loc["TP53", sid] = int(i in (3, 5, 8))
         mut.loc["PIK3CA", sid] = int(i in (1, 4))
     mut.index.name = "sample"
-    with gzip.open(root / "raw" / "mutation_gene_level.tsv.gz", "wt") as f:
-        mut.to_csv(f, sep="\t")
+    # "\n" line ends, like the real file: through a text-mode gzip stream on Windows the default would be "\r\r\n"
+    with gzip.open(root / "raw" / "mutation_gene_level.tsv.gz", "wt", newline="") as f:
+        mut.to_csv(f, sep="\t", lineterminator="\n")
     rows = [{"file": n, "layer": "synthetic", "source_url": "", "sha256": _sha(root / "raw" / n), "bytes": 0,
              "license": "synthetic", "retrieved": ""} for n in ["clinical.tsv", "survival.tsv", "mutation_gene_level.tsv.gz"]]
     pd.DataFrame(rows).to_csv(root / "sources.csv", index=False)
