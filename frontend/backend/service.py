@@ -382,9 +382,12 @@ class Service:
             raise ServiceError("There are no steps to run.")
         rechecked = []
         if edited and spec.get("parser") != "rules":
-            steps, _, rechecked, problems = self._prepare_edited(spec["steps"])
+            steps, ids, rechecked, problems = self._prepare_edited(spec["steps"])
             if problems:
                 raise ServiceError("These steps can't run on this release: " + "; ".join(p["message"] for p in problems))
+            log = self.canvas_fix_log(spec["steps"], ids)
+            if log:
+                spec["fix_log"] = log
             spec["steps"] = steps
         payload = self._evaluate(spec)
         payload["rechecked"] = rechecked
@@ -421,6 +424,25 @@ class Service:
                         note="; ".join(changes) or "Fixed double counting")
 
     # ---------- editing a built cohort ----------
+    @staticmethod
+    def canvas_fix_log(raw_steps, ids):
+        """The canvas fixes inflating joins in the browser and sends each fixed step's pre-fix counts as `_fix`.
+        Turn those into fix_log entries numbered by the step's place in the prepared steps (`ids` = their _cids)."""
+        log = []
+        for raw in raw_steps or []:
+            fx = raw.get("_fix") if isinstance(raw, dict) else None
+            if not isinstance(fx, dict) or raw.get("_cid") not in ids:
+                continue
+            try:
+                per_sample = {str(k): int(v) for k, v in (fx.get("rows_per_sample") or {}).items()}
+                log.append({"step": ids.index(raw["_cid"]) + 1, "was": str(fx.get("was", "")),
+                            "rows": int(fx["rows"]), "samples": int(fx["samples"]), "patients": int(fx.get("patients") or 0),
+                            "examples": list(fx.get("examples") or [])[:5], "fix": str(fx.get("fix", "")),
+                            "inserted_step": False, "rows_per_sample": per_sample})
+            except (KeyError, TypeError, ValueError):
+                continue  # a malformed record is dropped, never guessed
+        return log
+
     def _prepare_edited(self, steps):
         """Check edited steps one at a time (keeping the user's order and each step's client id `_cid`), drop the
         ones switched off (`_off`), and add any join a filter needs. Returns (steps, ids, fixes, problems)."""
@@ -584,6 +606,7 @@ class Service:
                           "removed": len(s.removed), "removed_reason": s.removed_reason,
                           "removed_examples": s.removed[:6], "inflated": s.inflated,
                           "inflation_note": s.inflation_note, "duplicate_examples": s.duplicate_examples[:5],
+                          "duplicate_counts": s.duplicate_counts if s.inflated else {},
                           "fix": fix_text, "shift": shift, "error": s.error, "skipped": s.skipped,
                           "missing_fraction": round(s.missing_fraction, 3), "column": s.column,
                           "selection": {"patients": len(s.selection), "examples": s.selection[:4]} if s.selection else None})

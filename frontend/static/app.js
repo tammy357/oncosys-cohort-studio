@@ -1,7 +1,7 @@
 // Cohort Studio — Build page. Shared helpers live in common.js; three.js, GSAP and Lucide are optional.
 import {
   $, $$, h, s, ic, paintIcons, store, session, api, fmt, clock, modeLabel, verdictLabel, timeAgo, rich,
-  countTo, enter, toast, warnToast, errorToast, clearToasts, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion, did,
+  countTo, enter, toast, auditReasons, auditFixedBadge, auditRemovedList, warnToast, errorToast, clearToasts, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion, did,
 } from './common.js';
 import { openWorkbench } from './workbench.js';
 import { initTour } from './tour.js';
@@ -515,52 +515,6 @@ function flowDiagram(res, onEdit) {
     if ((st.removed_examples || []).length) box.append(h('div', { class: 'fw-ex' }, 'e.g. ', st.removed_examples.slice(0, 4).map(x => h('code', {}, x))));
     return box;
   };
-  // Why each removed sample left, grouped: "ER status is 'Negative' 169 · isn't recorded 42". One reason = plain text.
-  const reasons = st => {
-    const rs = st.reasons || [];
-    if (rs.length < 2) return h('span', {}, rich((rs[0] && rs[0].reason) || st.removed_reason));
-    const max = Math.max(...rs.map(r => r.n));
-    return h('div', { class: 'fx-reasons' }, rs.slice(0, 5).map(r => h('div', { class: 'fx-r' },
-      h('span', { class: 'fx-bar' }, h('i', { style: `width:${Math.max(4, (100 * r.n) / max)}%` })),
-      h('span', { class: 'fx-n' }, fmt(r.n)), h('span', { class: 'fx-t' }, r.reason))),
-      rs.length > 5 ? h('div', { class: 'muted' }, `+ ${rs.length - 5} more reasons in exclusions.csv`) : null);
-  };
-  // A join the fix repaired: how many rows it made before, and which samples it had counted more than once.
-  const fixedBadge = st => st.fixed ? h('div', { class: 'fb-fixed' },
-    h('span', { class: 'fb-badge ok' }, `Fixed: ${fmt(st.fixed.rows_before)} rows → ${fmt(st.fixed.samples)} samples`),
-    h('small', {}, `${fmt(st.fixed.doubled)} samples had ${st.fixed.max_rows > 2 ? `2–${st.fixed.max_rows}` : '2'} rows; each is now counted once.`),
-    st.fixed.examples.length ? h('small', { class: 'fw-ex' }, 'e.g. ', st.fixed.examples.map(x => h('code', {}, x))) : null) : null;
-  // Every sample a step removed, in a searchable table under its exclusion box (built on first open).
-  const removedList = st => {
-    const list = st.removed_list || [];
-    if (!list.length) return null;
-    const panel = h('div', { class: 'fx-list', hidden: true });
-    const toggle = h('button', { type: 'button', class: 'fx-all', 'aria-expanded': 'false' }, `List all ${fmt(list.length)} removed samples`);
-    let built = false;
-    toggle.addEventListener('click', () => {
-      const open = panel.hidden;
-      panel.hidden = !open;
-      toggle.setAttribute('aria-expanded', String(open));
-      toggle.textContent = open ? 'Hide the list' : `List all ${fmt(list.length)} removed samples`;
-      if (!open || built) return;
-      built = true;
-      const body = h('tbody');
-      const count = h('span', { class: 'muted' });
-      const render = q => {
-        const rows = q ? list.filter(r => `${r.sample_id} ${r.patient_id} ${r.reason}`.toLowerCase().includes(q)) : list;
-        body.replaceChildren(...rows.map(r => h('tr', {}, h('td', {}, h('code', {}, r.sample_id)), h('td', {}, r.reason),
-          h('td', {}, r.patient_kept ? 'yes' : 'no'))));
-        count.textContent = `${fmt(rows.length)} of ${fmt(list.length)}`;
-      };
-      const search = h('input', { type: 'search', class: 'fx-search', placeholder: 'Find a barcode, patient or reason', 'aria-label': 'Filter removed samples' });
-      search.addEventListener('input', () => render(search.value.trim().toLowerCase()));
-      panel.append(h('div', { class: 'fx-tools' }, search, count),
-        h('div', { class: 'fx-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Sample'), h('th', {}, 'Why it was removed'),
-          h('th', { title: 'Is this patient still in the cohort through another sample?' }, 'Patient still in'))), body)));
-      render('');
-    });
-    return h('div', { class: 'fx-listwrap' }, toggle, panel);
-  };
   wrap.append(h('div', { class: 'flow-box flow-main start' }, 'All samples in the release', h('span', { class: 'fb-n' }, `n = ${fmt(res.start.samples)}`)));
   for (const st of res.steps) {
     wrap.append(h('div', { class: 'flow-stem' }, st.removed ? h('span', { class: 'branch' }) : null));
@@ -573,14 +527,14 @@ function flowDiagram(res, onEdit) {
           const gs = G(); if (open && gs) gs.from(detail, { height: 0, autoAlpha: 0, duration: 0.3, ease: 'power2.out', clearProps: 'all' }); } },
       h('span', { class: 'fb-n' }, `Excluded n = ${fmt(st.removed)}`,
         h('small', { class: 'fx-pt' }, ` · ${fmt(st.patients_removed || 0)} patient${st.patients_removed === 1 ? '' : 's'} lost`),
-        h('span', { class: 'fb-more' }, ic('chevron-down'))), reasons(st), detail);
+        h('span', { class: 'fb-more' }, ic('chevron-down'))), auditReasons(st), detail);
     }
-    wrap.append(h('div', { class: 'flow-side' }, excl ? h('div', { class: 'fx-side' }, excl, removedList(st)) : null));
+    wrap.append(h('div', { class: 'flow-side' }, excl ? h('div', { class: 'fx-side' }, excl, auditRemovedList(st)) : null));
     wrap.append(h('div', { class: `flow-box flow-main${st.inflated ? ' inflated' : ''}${st.error ? ' error' : ''}` }, rich(st.label),
       h('span', { class: 'fb-n' }, st.skipped ? 'not run' : `n = ${fmt(st.samples)}`,
         st.skipped ? null : h('small', {}, ` · ${fmt(st.patients)} patients${st.rows !== st.samples ? ` · ${fmt(st.rows)} rows` : ''}`)),
       st.inflated ? h('span', { class: 'fb-badge' }, `${fmt(st.rows - st.samples)} rows counted twice`) : null,
-      fixedBadge(st),
+      auditFixedBadge(st),
       st.error ? h('div', { class: 'muted' }, st.error) : null,
       onEdit ? h('button', { type: 'button', class: 'fb-edit', title: 'Change this step', 'aria-label': `Change step ${st.index + 1}`, onclick: () => onEdit(st.index) }, ic('pen-line')) : null));
   }

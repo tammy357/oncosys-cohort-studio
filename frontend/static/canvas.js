@@ -5,7 +5,7 @@
 // the Build page and the AI use; the server runs them with the same engine (POST /api/canvas/evaluate), so every
 // number on a card is the engine's.
 import { $, $$, h, ic, paintIcons, api, fmt, rich, store, session, toast, warnToast, errorToast, initChrome,
-  showModelStatus, loadMeta, verdictLabel, did } from './common.js';
+  showModelStatus, loadMeta, verdictLabel, did, auditReasons, auditFixedBadge, auditRemovedList } from './common.js';
 import { initTour, openTour, openPractice } from './tour.js';
 import { createGraph } from './canvas-graph.js';
 import { OPS, LAYERS, SLIDE_KINDS, FROZEN, TABLE_ICON, describe, controls, stepFor } from './canvas-controls.js';
@@ -24,7 +24,7 @@ let evTimer = null, codeTimer = null, impTimer = null;
 const clone = x => JSON.parse(JSON.stringify(x));
 const strip = s => Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith('_')));
 const withCid = s => ({ ...clone(strip(s)), _cid: cidSeq++ });
-const forServer = () => S.steps.map(s => ({ ...strip(s), _cid: s._cid, ...(s._off ? { _off: true } : {}) }));
+const forServer = () => S.steps.map(s => ({ ...strip(s), _cid: s._cid, ...(s._off ? { _off: true } : {}), ...(s._fix ? { _fix: s._fix } : {}) }));
 const stepByCid = cid => S.steps.find(s => s._cid === cid);
 const evFor = cid => (S.ev ? S.ev.steps.find(x => x.cid === cid) : null);
 const evIndex = cid => (S.ev ? S.ev.steps.findIndex(x => x.cid === cid) : -1);
@@ -125,6 +125,9 @@ function applyFix(cid) {
   const e = evFor(cid), st = stepByCid(cid);
   if (!e || !st) return;
   record();
+  // Keep what the join did before the fix, for the "Fixed" badge, the ledger and audit_trail.csv.
+  st._fix = { rows: e.rows, samples: e.samples, patients: e.patients, was: e.label, fix: e.fix,
+    examples: (e.duplicate_examples || []).slice(0, 5), rows_per_sample: e.duplicate_counts || {} };
   if (e.fix_step) Object.assign(st, strip(e.fix_step));
   else S.steps.splice(S.steps.indexOf(st) + 1, 0, withCid({ op: 'dedupe' }));
   flash(cid);
@@ -440,6 +443,7 @@ function renderInsights() {
   else if (st._off) t.push(h('div', { class: 'cv-banner info' }, h('span', {}, 'Switched off: the cohort is shown without it.')));
   else if (e) {
     t.push(nums([[fmt(e.samples), 'samples'], [fmt(e.patients), 'patients'], [fmt(e.rows), 'rows', e.rows > e.samples ? 'hot' : '']]));
+    if (e.fixed) t.push(h('div', { class: 'cv-banner ok' }, auditFixedBadge(e)));
     if (e.inflated) {
       const ex = (e.duplicate_examples || [])[0];
       t.push(h('div', { class: 'cv-banner infl' }, h('b', {}, `${fmt(e.rows - e.samples)} extra rows count samples more than once`),
@@ -455,7 +459,9 @@ function renderInsights() {
     if (e.removed || imp !== undefined) {
       const by = e.removed_by || {};
       out.push(details(`Who it removed · ${fmt(e.removed)}`, [
-        h('p', {}, rich(e.removed_reason || 'Nothing removed.')),
+        e.removed ? h('p', {}, h('b', {}, `${fmt(e.removed)} samples · ${fmt(e.patients_removed || 0)} patients lost`)) : null,
+        e.removed ? auditReasons(e) : h('p', {}, 'Nothing removed.'),
+        auditRemovedList(e),
         imp !== undefined ? h('p', { class: 'cv-hint' }, `Without this step the cohort would have ${imp >= 0 ? `${fmt(imp)} more` : `${fmt(-imp)} fewer`} samples.`) : null,
         ...CHARS.filter(ch => by[ch.key]).map(ch => h('div', { class: 'cv-byrow' }, h('small', {}, ch.name), mixBar(by[ch.key], ch, { cls: 'cv-mix wide' })))]));
     }

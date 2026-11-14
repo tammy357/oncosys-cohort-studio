@@ -152,6 +152,9 @@ class Canvas:
         if not run_steps:
             return base
         spec = {"request": "canvas", "steps": run_steps}
+        log = self.svc.canvas_fix_log(steps, ids)
+        if log:
+            spec["fix_log"] = log
         payload = self.svc._evaluate(spec)
         out_steps = []
         for st, cid, raw in zip(payload["steps"], ids, run_steps):
