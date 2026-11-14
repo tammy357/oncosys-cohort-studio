@@ -604,7 +604,13 @@ class Service:
         composition = {c: {"start": counts(stages[0], c), "steps": [counts(x, c) for x in stages[1:]],
                            "final": counts(result.cohort_ids, c)} for c in chars}
         fixes = exports.fixes_by_step(result)
+        patient_of = result.start_frame.drop_duplicates("sample_id").set_index("sample_id")["patient_id"].to_dict()
+        kept_patients = set(result.frame["patient_id"]) if result.cohort_ids else set()
         for st, s in zip(steps, result.steps):
+            # Every sample this step removed, for the "list all" table under its exclusion box.
+            st["removed_list"] = [{"sample_id": sid, "patient_id": patient_of.get(sid, sid[:12]),
+                                   "reason": s.removed_reasons.get(sid, s.removed_reason),
+                                   "patient_kept": patient_of.get(sid, sid[:12]) in kept_patients} for sid in s.removed]
             st["removed_by"] = {c: counts(s.removed, c) for c in ("PAM50 subtype", "ER status (IHC)", "Sample type") if c in chars} if s.removed else {}
             # The audit trail, per step: why each removed sample left (grouped), how many patients left with them,
             # and, for a join the fix repaired, how many rows it made before the fix and which samples were doubled.

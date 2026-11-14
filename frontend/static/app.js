@@ -530,6 +530,37 @@ function flowDiagram(res, onEdit) {
     h('span', { class: 'fb-badge ok' }, `Fixed: ${fmt(st.fixed.rows_before)} rows → ${fmt(st.fixed.samples)} samples`),
     h('small', {}, `${fmt(st.fixed.doubled)} samples had ${st.fixed.max_rows > 2 ? `2–${st.fixed.max_rows}` : '2'} rows; each is now counted once.`),
     st.fixed.examples.length ? h('small', { class: 'fw-ex' }, 'e.g. ', st.fixed.examples.map(x => h('code', {}, x))) : null) : null;
+  // Every sample a step removed, in a searchable table under its exclusion box (built on first open).
+  const removedList = st => {
+    const list = st.removed_list || [];
+    if (!list.length) return null;
+    const panel = h('div', { class: 'fx-list', hidden: true });
+    const toggle = h('button', { type: 'button', class: 'fx-all', 'aria-expanded': 'false' }, `List all ${fmt(list.length)} removed samples`);
+    let built = false;
+    toggle.addEventListener('click', () => {
+      const open = panel.hidden;
+      panel.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? 'Hide the list' : `List all ${fmt(list.length)} removed samples`;
+      if (!open || built) return;
+      built = true;
+      const body = h('tbody');
+      const count = h('span', { class: 'muted' });
+      const render = q => {
+        const rows = q ? list.filter(r => `${r.sample_id} ${r.patient_id} ${r.reason}`.toLowerCase().includes(q)) : list;
+        body.replaceChildren(...rows.map(r => h('tr', {}, h('td', {}, h('code', {}, r.sample_id)), h('td', {}, r.reason),
+          h('td', {}, r.patient_kept ? 'yes' : 'no'))));
+        count.textContent = `${fmt(rows.length)} of ${fmt(list.length)}`;
+      };
+      const search = h('input', { type: 'search', class: 'fx-search', placeholder: 'Find a barcode, patient or reason', 'aria-label': 'Filter removed samples' });
+      search.addEventListener('input', () => render(search.value.trim().toLowerCase()));
+      panel.append(h('div', { class: 'fx-tools' }, search, count),
+        h('div', { class: 'fx-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Sample'), h('th', {}, 'Why it was removed'),
+          h('th', { title: 'Is this patient still in the cohort through another sample?' }, 'Patient still in'))), body)));
+      render('');
+    });
+    return h('div', { class: 'fx-listwrap' }, toggle, panel);
+  };
   wrap.append(h('div', { class: 'flow-box flow-main start' }, 'All samples in the release', h('span', { class: 'fb-n' }, `n = ${fmt(res.start.samples)}`)));
   for (const st of res.steps) {
     wrap.append(h('div', { class: 'flow-stem' }, st.removed ? h('span', { class: 'branch' }) : null));
@@ -544,7 +575,7 @@ function flowDiagram(res, onEdit) {
         h('small', { class: 'fx-pt' }, ` · ${fmt(st.patients_removed || 0)} patient${st.patients_removed === 1 ? '' : 's'} lost`),
         h('span', { class: 'fb-more' }, ic('chevron-down'))), reasons(st), detail);
     }
-    wrap.append(h('div', { class: 'flow-side' }, excl));
+    wrap.append(h('div', { class: 'flow-side' }, excl ? h('div', { class: 'fx-side' }, excl, removedList(st)) : null));
     wrap.append(h('div', { class: `flow-box flow-main${st.inflated ? ' inflated' : ''}${st.error ? ' error' : ''}` }, rich(st.label),
       h('span', { class: 'fb-n' }, st.skipped ? 'not run' : `n = ${fmt(st.samples)}`,
         st.skipped ? null : h('small', {}, ` · ${fmt(st.patients)} patients${st.rows !== st.samples ? ` · ${fmt(st.rows)} rows` : ''}`)),
