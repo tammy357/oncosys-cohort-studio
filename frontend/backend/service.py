@@ -93,7 +93,7 @@ GROUPS = [("LumA", "Luminal A"), ("LumB", "Luminal B"), ("Basal", "Basal-like"),
           ("Metastatic", "Metastatic")]
 FILES = {"cohort_samples.csv": "text/csv", "reproduce_cohort.py": "text/x-python", "cohort_spec.json": "application/json",
          "findings.json": "application/json", "verdict.json": "application/json", "ledger.csv": "text/csv",
-         "exclusions.csv": "text/csv", "sample_selection.csv": "text/csv", "coverage.csv": "text/csv"}
+         "exclusions.csv": "text/csv", "audit_trail.csv": "text/csv", "sample_selection.csv": "text/csv", "coverage.csv": "text/csv"}
 
 
 def compact_mutation(data_dir):
@@ -382,9 +382,12 @@ class Service:
             raise ServiceError("There are no steps to run.")
         rechecked = []
         if edited and spec.get("parser") != "rules":
-            steps, _, rechecked, problems = self._prepare_edited(spec["steps"])
+            steps, ids, rechecked, problems = self._prepare_edited(spec["steps"])
             if problems:
                 raise ServiceError("These steps can't run on this release: " + "; ".join(p["message"] for p in problems))
+            log = self.canvas_fix_log(spec["steps"], ids)
+            if log:
+                spec["fix_log"] = log
             spec["steps"] = steps
         payload = self._evaluate(spec)
         payload["rechecked"] = rechecked
@@ -421,6 +424,25 @@ class Service:
                         note="; ".join(changes) or "Fixed double counting")
 
     # ---------- editing a built cohort ----------
+    @staticmethod
+    def canvas_fix_log(raw_steps, ids):
+        """The canvas fixes inflating joins in the browser and sends each fixed step's pre-fix counts as `_fix`.
+        Turn those into fix_log entries numbered by the step's place in the prepared steps (`ids` = their _cids)."""
+        log = []
+        for raw in raw_steps or []:
+            fx = raw.get("_fix") if isinstance(raw, dict) else None
+            if not isinstance(fx, dict) or raw.get("_cid") not in ids:
+                continue
+            try:
+                per_sample = {str(k): int(v) for k, v in (fx.get("rows_per_sample") or {}).items()}
+                log.append({"step": ids.index(raw["_cid"]) + 1, "was": str(fx.get("was", "")),
+                            "rows": int(fx["rows"]), "samples": int(fx["samples"]), "patients": int(fx.get("patients") or 0),
+                            "examples": list(fx.get("examples") or [])[:5], "fix": str(fx.get("fix", "")),
+                            "inserted_step": False, "rows_per_sample": per_sample})
+            except (KeyError, TypeError, ValueError):
+                continue  # a malformed record is dropped, never guessed
+        return log
+
     def _prepare_edited(self, steps):
         """Check edited steps one at a time (keeping the user's order and each step's client id `_cid`), drop the
         ones switched off (`_off`), and add any join a filter needs. Returns (steps, ids, fixes, problems)."""
@@ -553,6 +575,7 @@ class Service:
             "verdict.json": lambda: json.dumps(v.to_dict(), indent=2),
             "ledger.csv": lambda: exports.ledger_frame(result).to_csv(index=False),
             "exclusions.csv": lambda: exports.exclusions_frame(result).to_csv(index=False),
+            "audit_trail.csv": lambda: exports.audit_trail_frame(result).to_csv(index=False),
             "sample_selection.csv": lambda: exports.selection_frame(result).to_csv(index=False),
             "coverage.csv": lambda: exports.coverage_frame(result, self.store).to_csv(index=False),
         }[name]()
@@ -583,6 +606,7 @@ class Service:
                           "removed": len(s.removed), "removed_reason": s.removed_reason,
                           "removed_examples": s.removed[:6], "inflated": s.inflated,
                           "inflation_note": s.inflation_note, "duplicate_examples": s.duplicate_examples[:5],
+                          "duplicate_counts": s.duplicate_counts if s.inflated else {},
                           "fix": fix_text, "shift": shift, "error": s.error, "skipped": s.skipped,
                           "missing_fraction": round(s.missing_fraction, 3), "column": s.column,
                           "selection": {"patients": len(s.selection), "examples": s.selection[:4]} if s.selection else None})
@@ -602,8 +626,26 @@ class Service:
         chars = [c for c in FUNNEL_CHARACTERISTICS if c in comp.columns]
         composition = {c: {"start": counts(stages[0], c), "steps": [counts(x, c) for x in stages[1:]],
                            "final": counts(result.cohort_ids, c)} for c in chars}
+        fixes = exports.fixes_by_step(result)
+        patient_of = result.start_frame.drop_duplicates("sample_id").set_index("sample_id")["patient_id"].to_dict()
+        kept_patients = set(result.frame["patient_id"]) if result.cohort_ids else set()
         for st, s in zip(steps, result.steps):
+            # Every sample this step removed, for the "list all" table under its exclusion box.
+            st["removed_list"] = [{"sample_id": sid, "patient_id": patient_of.get(sid, sid[:12]),
+                                   "reason": s.removed_reasons.get(sid, s.removed_reason),
+                                   "patient_kept": patient_of.get(sid, sid[:12]) in kept_patients} for sid in s.removed]
             st["removed_by"] = {c: counts(s.removed, c) for c in ("PAM50 subtype", "ER status (IHC)", "Sample type") if c in chars} if s.removed else {}
+            # The audit trail, per step: why each removed sample left (grouped), how many patients left with them,
+            # and, for a join the fix repaired, how many rows it made before the fix and which samples were doubled.
+            why = pd.Series([s.removed_reasons.get(sid, s.removed_reason) for sid in s.removed], dtype=object)
+            st["reasons"] = [{"reason": r, "n": int(n)} for r, n in why.value_counts().items()]
+            st["patients_removed"] = max(s.patients_in - s.patients_out, 0) if not s.skipped else 0
+            fix = fixes.get(s.index + 1)
+            if fix:
+                doubled = fix.get("rows_per_sample", {})
+                st["fixed"] = {"rows_before": fix["rows"], "samples": fix["samples"], "doubled": len(doubled),
+                               "max_rows": max(doubled.values(), default=0), "examples": list(doubled)[:4],
+                               "fix": fix["fix"]}
         return {"spec": spec, "spec_labels": [describe_step(x) for x in spec["steps"]], "composition": composition,
                 "start": {"samples": len(result.start_samples)},
                 "final": {"rows": result.final_rows, "samples": len(result.cohort_ids),

@@ -40,7 +40,7 @@ INSTRUCTIONS = (
     "15-character TCGA barcode) and reproduce_cohort.py. Joins that count a sample twice are fixed automatically and "
     "reported. Research use only: no diagnosis, treatment recommendation or clinical claim.")
 FILES = ("cohort_samples.csv", "reproduce_cohort.py", "cohort_spec.json", "ledger.csv", "exclusions.csv",
-         "sample_selection.csv", "coverage.csv", "verdict.json", "findings.json")
+         "audit_trail.csv", "sample_selection.csv", "coverage.csv", "verdict.json", "findings.json")
 MAX_REQUEST_CHARS = 2000
 
 _DEFINITION = {"type": "object", "description": (
@@ -80,7 +80,7 @@ TOOLS = [
     {"name": "get_cohort_file", "title": "Export a cohort file",
      "description": ("One export for a definition (as returned by build_cohort): cohort_samples.csv (one row per "
                      "sample, sample_id column), reproduce_cohort.py (rebuilds the cohort exactly from the frozen "
-                     "files), cohort_spec.json, ledger.csv, exclusions.csv, sample_selection.csv, coverage.csv, "
+                     "files), cohort_spec.json, ledger.csv, exclusions.csv, audit_trail.csv, sample_selection.csv, coverage.csv, "
                      "verdict.json or findings.json."),
      "inputSchema": {"type": "object", "properties": {"definition": _DEFINITION,
                                                       "file": {"type": "string", "enum": list(FILES)}},
@@ -200,6 +200,7 @@ class CohortTools:
             "cohort_spec.json": lambda: json.dumps(r.spec, indent=2),
             "ledger.csv": lambda: exports.ledger_frame(r).to_csv(index=False),
             "exclusions.csv": lambda: exports.exclusions_frame(r).to_csv(index=False),
+            "audit_trail.csv": lambda: exports.audit_trail_frame(r).to_csv(index=False),
             "sample_selection.csv": lambda: exports.selection_frame(r).to_csv(index=False),
             "coverage.csv": lambda: exports.coverage_frame(r, self.store).to_csv(index=False),
             "verdict.json": lambda: json.dumps(v.to_dict(), indent=2),

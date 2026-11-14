@@ -123,8 +123,8 @@ def report(run, store):
     if not result.ok:
         print("\n!! A step failed, so cohort_samples.csv is empty. Fix the step (see above) and run again.")
     print(f"\nWrote {len(result.cohort_ids)} samples to {run.out_dir / 'cohort_samples.csv'} "
-          f"(plus reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv, sample_selection.csv, "
-          f"coverage.csv, verdict.json, findings.json)")
+          f"(plus reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv, audit_trail.csv, "
+          f"sample_selection.csv, coverage.csv, verdict.json, findings.json)")
 
 
 def print_ledger(result):

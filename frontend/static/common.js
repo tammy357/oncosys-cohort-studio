@@ -290,3 +290,61 @@ export function showModelStatus(ai) {
   $('#ai-model').textContent = ai.available ? `${ai.model}${ai.where === 'local endpoint' ? ' · local' : ''}` : 'off';
   status.title = ai.available ? `Model calls this run: ${ai.calls} of ${ai.call_limit}` : ai.reason;
 }
+
+// ---------------------------------------------------------------- audit trail (Build page flow diagram and canvas)
+// Why each removed sample left, grouped: "ER status is 'Negative' 169 · isn't recorded 42". One reason = plain text.
+export const auditReasons = st => {
+  const rs = st.reasons || [];
+  if (rs.length < 2) return h('span', {}, rich((rs[0] && rs[0].reason) || st.removed_reason));
+  const max = Math.max(...rs.map(r => r.n));
+  return h('div', { class: 'fx-reasons' }, rs.slice(0, 5).map(r => h('div', { class: 'fx-r' },
+    h('span', { class: 'fx-bar' }, h('i', { style: `width:${Math.max(4, (100 * r.n) / max)}%` })),
+    h('span', { class: 'fx-n' }, fmt(r.n)), h('span', { class: 'fx-t' }, r.reason))),
+    rs.length > 5 ? h('div', { class: 'muted' }, `+ ${rs.length - 5} more reasons in exclusions.csv`) : null);
+};
+// A join the fix repaired: how many rows it made before, and which samples it had counted more than once.
+export const auditFixedBadge = st => st.fixed ? h('div', { class: 'fb-fixed' },
+  h('span', { class: 'fb-badge ok' }, `Fixed: ${fmt(st.fixed.rows_before)} rows → ${fmt(st.fixed.samples)} samples`),
+  h('small', {}, `${fmt(st.fixed.doubled)} samples had ${st.fixed.max_rows > 2 ? `2–${st.fixed.max_rows}` : '2'} rows; each is now counted once.`),
+  st.fixed.examples.length ? h('small', { class: 'fw-ex' }, 'e.g. ', st.fixed.examples.map(x => h('code', {}, x))) : null) : null;
+// Every sample a step removed, in a searchable table under its exclusion box (built on first open).
+export const auditRemovedList = st => {
+  const list = st.removed_list || [];
+  if (!list.length) return null;
+  const panel = h('div', { class: 'fx-list', hidden: true });
+  const toggle = h('button', { type: 'button', class: 'fx-all', 'aria-expanded': 'false' }, `List all ${fmt(list.length)} removed samples`);
+  let built = false;
+  toggle.addEventListener('click', () => {
+    const open = panel.hidden;
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.textContent = open ? 'Hide the list' : `List all ${fmt(list.length)} removed samples`;
+    if (!open || built) return;
+    built = true;
+    const body = h('tbody');
+    const count = h('span', { class: 'muted' });
+    const render = q => {
+      const rows = q ? list.filter(r => `${r.sample_id} ${r.patient_id} ${r.reason}`.toLowerCase().includes(q)) : list;
+      body.replaceChildren(...rows.map(r => h('tr', {}, h('td', {}, h('code', {}, r.sample_id)), h('td', {}, r.reason),
+        h('td', {}, r.patient_kept ? 'yes' : 'no'))));
+      count.textContent = `${fmt(rows.length)} of ${fmt(list.length)}`;
+    };
+    const search = h('input', { type: 'search', class: 'fx-search', placeholder: 'Find a barcode, patient or reason', 'aria-label': 'Filter removed samples' });
+    search.addEventListener('input', () => render(search.value.trim().toLowerCase()));
+    panel.append(h('div', { class: 'fx-tools' }, search, count),
+      h('div', { class: 'fx-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Sample'), h('th', {}, 'Why it was removed'),
+        h('th', { title: 'Is this patient still in the cohort through another sample?' }, 'Patient still in'))), body)));
+    render('');
+  });
+  const csvCell = v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const download = h('button', { type: 'button', class: 'fx-all', title: 'Every sample this step removed, as a CSV file' }, `Download (CSV)`);
+  download.addEventListener('click', () => {
+    const lines = [['sample_id', 'patient_id', 'removed_at_step', 'step', 'reason', 'patient still in cohort'].join(',')]
+      .concat(list.map(r => [r.sample_id, r.patient_id, st.index + 1, st.label, r.reason, r.patient_kept ? 'yes' : 'no'].map(csvCell).join(',')));
+    const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv' }));
+    const a = h('a', { href: url, download: `removed_at_step_${st.index + 1}.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  return h('div', { class: 'fx-listwrap' }, h('div', { class: 'fx-links' }, toggle, download), panel);
+};

@@ -11,29 +11,95 @@ from .engine import PREFIX, extra_cohort_columns
 from .spec import condition_sources, describe_step, resolve_condition
 
 
+def fixes_by_step(result):
+    """The fix_log entries keyed by the step number they refer to in the current (fixed) spec. A fix that inserted a
+    'keep one row per sample' step shifts every later step down by one."""
+    out, inserted = {}, 0
+    for fix in sorted(result.spec.get("fix_log", []), key=lambda f: f["step"]):
+        out[fix["step"] + inserted] = fix
+        inserted += 1 if fix.get("inserted_step") else 0
+    return out
+
+
 def ledger_frame(result):
+    fixes = fixes_by_step(result)
     rows = []
     for s in result.steps:
         top = max(s.shift.items(), key=lambda kv: kv[1]["tvd"], default=(None, None))
+        fix = fixes.get(s.index + 1)
         rows.append({
             "step": s.index + 1, "what it does": s.label,
             "rows": s.rows_out if not s.skipped else None,
             "samples": s.samples_out if not s.skipped else None,
             "patients": s.patients_out if not s.skipped else None,
             "samples removed": len(s.removed),
-            "inflated": "YES" if s.inflated else "",
+            "patients removed": max(s.patients_in - s.patients_out, 0) if not s.skipped else None,
+            "rows before fix": fix["rows"] if fix else None,
+            "inflated": "YES" if s.inflated else ("fixed" if fix else ""),
             "largest shift": (f"{top[0]} {top[1]['tvd']:.2f}" + (" (expected)" if top[1].get("expected") else ""))
                              if top[0] else "",
             "error": s.error,
         })
-    return pd.DataFrame(rows)
+    frame = pd.DataFrame(rows)
+    if len(frame):
+        frame["rows before fix"] = frame["rows before fix"].astype("Int64")
+    return frame
+
+
+EXCLUSION_COLUMNS = ["sample_id", "removed_at_step", "step", "reason", "patient_id", "patient still in cohort"]
+
+
+def _patients(result):
+    if result.start_frame is None:
+        return {}
+    return result.start_frame.drop_duplicates("sample_id").set_index("sample_id")["patient_id"].to_dict()
 
 
 def exclusions_frame(result):
-    rows = [{"sample_id": sid, "removed_at_step": s.index + 1, "step": s.label,
-             "reason": s.removed_reasons.get(sid, s.removed_reason)}
-            for s in result.steps for sid in s.removed]
-    return pd.DataFrame(rows, columns=["sample_id", "removed_at_step", "step", "reason"])
+    patient = _patients(result)
+    kept = set(result.frame["patient_id"]) if result.cohort_ids else set()
+    rows = []
+    for s in result.steps:
+        for sid in s.removed:
+            pid = patient.get(sid, sid[:12])
+            rows.append({"sample_id": sid, "removed_at_step": s.index + 1, "step": s.label,
+                         "reason": s.removed_reasons.get(sid, s.removed_reason), "patient_id": pid,
+                         "patient still in cohort": "yes" if pid in kept else "no"})
+    return pd.DataFrame(rows, columns=EXCLUSION_COLUMNS)
+
+
+AUDIT_COLUMNS = ["sample_id", "patient_id", "sample_type", "outcome", "removed_at_step", "step", "reason",
+                 "patient still in cohort", "inflated at step", "rows before fix"]
+
+
+def audit_trail_frame(result):
+    """Every sample the run started from, once: kept, or the step that removed it and why; and, where a join
+    counted it more than once before the fix, at which step and how many rows it had."""
+    if result.start_frame is None:
+        return pd.DataFrame(columns=AUDIT_COLUMNS)
+    excl = exclusions_frame(result).drop_duplicates("sample_id").set_index("sample_id")
+    in_cohort = set(result.cohort_ids)
+    kept_patients = set(result.frame["patient_id"]) if result.cohort_ids else set()
+    duplicated = {}
+    for step, fix in sorted(fixes_by_step(result).items()):
+        for sid, n in fix.get("rows_per_sample", {}).items():
+            duplicated.setdefault(sid, (step, n))
+    rows = []
+    for _, x in result.start_frame.drop_duplicates("sample_id").iterrows():
+        sid = x["sample_id"]
+        removed = sid in excl.index and sid not in in_cohort
+        dup_step, dup_rows = duplicated.get(sid, (None, None))
+        rows.append({"sample_id": sid, "patient_id": x["patient_id"], "sample_type": x["sample_type"],
+                     "outcome": "removed" if removed else ("in cohort" if sid in in_cohort else "not reached"),
+                     "removed_at_step": excl.at[sid, "removed_at_step"] if removed else None,
+                     "step": excl.at[sid, "step"] if removed else "",
+                     "reason": excl.at[sid, "reason"] if removed else "",
+                     "patient still in cohort": "yes" if x["patient_id"] in kept_patients else "no",
+                     "inflated at step": dup_step, "rows before fix": dup_rows})
+    frame = pd.DataFrame(rows, columns=AUDIT_COLUMNS)
+    for col in ("removed_at_step", "inflated at step", "rows before fix"):
+        frame[col] = frame[col].astype("Int64")
+    return frame.sort_values(["removed_at_step", "sample_id"], na_position="first")
 
 
 def cohort_frame(result):
@@ -274,6 +340,7 @@ def write_all(result, verdict, store, out_dir, team="Cohort Studio team"):
     (out / "cohort_spec.json").write_text(json.dumps(result.spec, indent=2))
     ledger_frame(result).to_csv(out / "ledger.csv", index=False)
     exclusions_frame(result).to_csv(out / "exclusions.csv", index=False)
+    audit_trail_frame(result).to_csv(out / "audit_trail.csv", index=False)
     selection_frame(result).to_csv(out / "sample_selection.csv", index=False)
     coverage_frame(result, store).to_csv(out / "coverage.csv", index=False)
     (out / "verdict.json").write_text(json.dumps(verdict.to_dict(), indent=2))

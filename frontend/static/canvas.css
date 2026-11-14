@@ -310,6 +310,8 @@ body.cv-dragging { cursor: grabbing; }
 .cv-banner.infl > b { color: var(--eosin); }
 .cv-banner.bad { background: var(--bad-w); color: var(--bad); }
 .cv-banner.info { background: var(--paper-2); color: var(--ink-2); }
+.cv-banner.ok { background: var(--ok-w); color: var(--ink-2); border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); }
+.cv-banner.ok .fb-badge { margin-top: 0; }
 .cv-banner-acts { display: flex; gap: 6px; flex-wrap: wrap; }
 .cv-sec { padding: 14px 0; border-top: 1px solid var(--rule); }
 .cv-sec-title { margin: 0 0 10px; font-size: 11.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }

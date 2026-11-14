@@ -1,7 +1,7 @@
 // Cohort Studio — Build page. Shared helpers live in common.js; three.js, GSAP and Lucide are optional.
 import {
   $, $$, h, s, ic, paintIcons, store, session, api, fmt, clock, modeLabel, verdictLabel, timeAgo, rich,
-  countTo, enter, toast, warnToast, errorToast, clearToasts, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion, did,
+  countTo, enter, toast, auditReasons, auditFixedBadge, auditRemovedList, warnToast, errorToast, clearToasts, tipped, loadMeta, initChrome, showModelStatus, G, reduceMotion, did,
 } from './common.js';
 import { openWorkbench } from './workbench.js';
 import { initTour } from './tour.js';
@@ -525,13 +525,16 @@ function flowDiagram(res, onEdit) {
       excl = h('button', { type: 'button', class: 'flow-box flow-excl', 'aria-expanded': 'false', title: 'Who was excluded',
         onclick: e => { const open = detail.hidden; detail.hidden = !open; e.currentTarget.setAttribute('aria-expanded', String(open));
           const gs = G(); if (open && gs) gs.from(detail, { height: 0, autoAlpha: 0, duration: 0.3, ease: 'power2.out', clearProps: 'all' }); } },
-      h('span', { class: 'fb-n' }, `Excluded n = ${fmt(st.removed)}`, h('span', { class: 'fb-more' }, ic('chevron-down'))), h('span', {}, rich(st.removed_reason)), detail);
+      h('span', { class: 'fb-n' }, `Excluded n = ${fmt(st.removed)}`,
+        h('small', { class: 'fx-pt' }, ` · ${fmt(st.patients_removed || 0)} patient${st.patients_removed === 1 ? '' : 's'} lost`),
+        h('span', { class: 'fb-more' }, ic('chevron-down'))), auditReasons(st), detail);
     }
-    wrap.append(h('div', { class: 'flow-side' }, excl));
+    wrap.append(h('div', { class: 'flow-side' }, excl ? h('div', { class: 'fx-side' }, excl, auditRemovedList(st)) : null));
     wrap.append(h('div', { class: `flow-box flow-main${st.inflated ? ' inflated' : ''}${st.error ? ' error' : ''}` }, rich(st.label),
       h('span', { class: 'fb-n' }, st.skipped ? 'not run' : `n = ${fmt(st.samples)}`,
         st.skipped ? null : h('small', {}, ` · ${fmt(st.patients)} patients${st.rows !== st.samples ? ` · ${fmt(st.rows)} rows` : ''}`)),
       st.inflated ? h('span', { class: 'fb-badge' }, `${fmt(st.rows - st.samples)} rows counted twice`) : null,
+      auditFixedBadge(st),
       st.error ? h('div', { class: 'muted' }, st.error) : null,
       onEdit ? h('button', { type: 'button', class: 'fb-edit', title: 'Change this step', 'aria-label': `Change step ${st.index + 1}`, onclick: () => onEdit(st.index) }, ic('pen-line')) : null));
   }
@@ -568,6 +571,7 @@ const FILE_INFO = {
   'verdict.json': 'The verdict and every check behind it.',
   'ledger.csv': 'Rows, samples and patients after every step.',
   'exclusions.csv': 'Every excluded sample, with the step and the reason.',
+  'audit_trail.csv': 'Every starting sample once: kept, or the step that removed it, why, and whether its patient is still in.',
   'sample_selection.csv': 'For “one sample per patient”: which sample each patient kept, and why.',
   'coverage.csv': 'Every clinical and survival variable, with the share of cohort samples that have a value.',
 };
@@ -647,6 +651,9 @@ function exportSection(res) {
     h('div', { class: 'files-menu' }, others.map(f => h('a', { download: f, href: url(f) }, ic('download'), h('span', {}, h('code', {}, f), h('small', {}, FILE_INFO[f] || ''))))));
   return sec('Export', h('div', { class: 'exports' },
     tipped(h('a', { class: 'btn small ink', download: 'cohort_samples.csv', href: url('cohort_samples.csv') }, ic('download'), 'Download cohort_samples.csv'), FILE_INFO['cohort_samples.csv']),
+    res.files.includes('audit_trail.csv')
+      ? tipped(h('a', { class: 'btn small', download: 'audit_trail.csv', href: url('audit_trail.csv') }, ic('list-checks'), 'Audit trail'), FILE_INFO['audit_trail.csv'])
+      : null,
     menu));
 }
 

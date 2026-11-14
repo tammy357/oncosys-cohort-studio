@@ -112,7 +112,8 @@ duplicates). **Other files** has:
 |---|---|
 | `reproduce_cohort.py` | Rebuilds exactly this cohort from the frozen files |
 | `cohort_spec.json` | The cohort definition; rerun it anywhere |
-| `ledger.csv`, `exclusions.csv` | Every step's rows, samples and patients; every removed sample and why |
+| `ledger.csv`, `exclusions.csv` | Every step's rows, samples and patients removed; every removed sample, the value that excluded it, and whether its patient is still in |
+| `audit_trail.csv` | Every starting sample once: in the cohort, or the step that removed it and why; samples a join counted twice, with their rows before the fix |
 | `sample_selection.csv` | Every "one sample per patient" choice |
 | `coverage.csv` | How much of each clinical variable is recorded for the cohort |
 | `findings.json` | The verdict and its checks |

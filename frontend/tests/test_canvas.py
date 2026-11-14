@@ -109,3 +109,19 @@ def test_gene_lookup_for_the_block_library(client):
     assert not typo["exact"] and typo["matches"] == [] and typo["closest"][0] == "TP53"
     assert client.get("/api/canvas/genes", params={"q": "ZZQQXX"}).json() == {"query": "ZZQQXX", "exact": False, "matches": [], "closest": []}
     assert client.get("/api/canvas/genes", params={"q": "<script>"}).json()["query"] == "SCRIPT"
+
+
+def test_a_fix_applied_on_the_canvas_reaches_the_audit_trail(client):
+    join = client.post("/api/canvas/evaluate", json={"steps": [PT, SLIDES]}).json()["steps"][1]
+    assert join["duplicate_counts"] and join["reasons"] is not None
+    # What canvas.js sends after "Apply the fix": the fixed step plus its pre-fix counts as _fix.
+    fix = {"rows": join["rows"], "samples": join["samples"], "patients": join["patients"], "was": join["label"],
+           "fix": join["fix"], "examples": join["duplicate_examples"], "rows_per_sample": join["duplicate_counts"]}
+    steps = [PT, {**SLIDES, **join["fix_step"], "_cid": 2, "_fix": fix}]
+    after = client.post("/api/canvas/evaluate", json={"steps": steps}).json()["steps"][1]
+    assert after["fixed"]["rows_before"] == join["rows"] and after["fixed"]["doubled"] == len(join["duplicate_counts"])
+    sid = client.post("/api/fork", json={"steps": steps, "query": "canvas fix"}).json()["search_id"]
+    ledger = client.get(f"/api/searches/{sid}/files/ledger.csv").text
+    assert f",{join['rows']},fixed," in ledger
+    trail = client.get(f"/api/searches/{sid}/files/audit_trail.csv").text
+    assert sum(1 for line in trail.splitlines()[1:] if line.endswith(tuple(f",2,{n}" for n in range(2, 10)))) == len(join["duplicate_counts"])

@@ -286,6 +286,7 @@ else:
         "findings.json": json.dumps(exports.findings_document(result, v, store, team), indent=2),
         "ledger.csv": exports.ledger_frame(result).to_csv(index=False),
         "exclusions.csv": excl.to_csv(index=False),
+        "audit_trail.csv": exports.audit_trail_frame(result).to_csv(index=False),
         "sample_selection.csv": selection.to_csv(index=False),
         "coverage.csv": coverage.to_csv(index=False),
     }
