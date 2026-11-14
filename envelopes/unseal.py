@@ -147,7 +147,18 @@ def rebuild(payload, dest):
     say("✓", f"All {len(RELEASE_FILES)} release files match their fingerprints")
 
 
+def safe_output():
+    # Windows consoles and captured output often use cp1252, which can't print ✓ or ✗.
+    # Replace what can't be encoded instead of crashing.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main():
+    safe_output()
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(1)
