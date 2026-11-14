@@ -92,7 +92,8 @@ def resolve(svc, user, ref):
         v = svc.db.get_version(user, int(sid), int(n)) if s else None
         if not v:
             raise CompareError("That version isn't saved any more.")
-        return {"ref": ref, "kind": "version", "id": s["id"], "label": f"{s['query']} · v{v['n']}", "mode": s["mode"], "spec": v["spec"]}
+        return {"ref": ref, "kind": "version", "id": s["id"], "label": f"{s['query']} · v{v['n']}", "mode": s["mode"], "spec": v["spec"],
+                "version": {"n": v["n"], "source": v.get("source"), "note": v.get("note") or "", "query": s["query"]}}
     if not raw.isdigit():
         raise CompareError(f"'{ref}' is not a cohort reference.")
     if kind == "s":
@@ -116,11 +117,30 @@ def _side(svc, item):
     m = store.manifest.set_index("sample_id")
     patients = set(m.loc[m.index.intersection(list(ids)), "patient_id"])
     return {"meta": {"ref": item["ref"], "kind": item["kind"], "id": item["id"], "label": item["label"], "mode": item["mode"],
-                     "n_samples": len(ids), "n_patients": len(patients), "verdict": v.verdict, "reason": v.reason,
+                     "n_samples": len(ids), "n_patients": len(patients), "n_rows": result.final_rows,
+                     "version": item.get("version"), "verdict": v.verdict, "reason": v.reason,
                      "inflated": bool(result.unresolved_inflation), "ran": result.ok,
                      "checks": [{"name": c.name, "status": c.status} for c in v.checks],
                      "steps": [describe_step(st) for st in item["spec"]["steps"]]},
-            "ids": ids, "patients": patients, "spec": item["spec"]}
+            "ids": ids, "patients": patients, "spec": item["spec"],
+            "rows_by_sample": result.frame["sample_id"].value_counts().to_dict() if result.ok else {}}
+
+
+def _row_overlap(a, b):
+    """Overlap counted in rows, for two versions of one cohort (where Fix it changes rows, not samples). Rows are
+    matched sample by sample: a sample with 2 rows in A and 1 in B shares 1 row, and its other row is only in A."""
+    ra, rb = a["rows_by_sample"], b["rows_by_sample"]
+    shared = only_a = only_b = 0
+    for sid in set(ra) | set(rb):
+        x, y = ra.get(sid, 0), rb.get(sid, 0)
+        shared += min(x, y)
+        only_a += max(x - y, 0)
+        only_b += max(y - x, 0)
+    n_a, n_b, union = sum(ra.values()), sum(rb.values()), shared + only_a + only_b
+    return {"basis": "rows", "a": n_a, "b": n_b, "shared": shared, "only_a": only_a, "only_b": only_b, "union": union,
+            "jaccard": round(shared / union, 4) if union else 0.0,
+            "overlap_coefficient": round(shared / min(n_a, n_b), 4) if n_a and n_b else 0.0,
+            "samples_in_both": len(set(ra) & set(rb))}
 
 
 def _composition(store, a_ids, b_ids):
@@ -197,13 +217,50 @@ def _protocol(a_spec, b_spec):
     b_keys = [key(st) for st in b_spec["steps"]]
     rows = [{"label": describe_step(st), "in": "both" if k in b_keys else "a"} for st, k in zip(a_spec["steps"], a_keys)]
     rows += [{"label": describe_step(st), "in": "b"} for st, k in zip(b_spec["steps"], b_keys) if k not in a_keys]
+    # a step at the same position, of the same kind, with different settings: one change (e.g. Fix it switching a
+    # join from one row per match to one row per sample), not one step removed and another added
+    changed = [{"step": i + 1, "a": describe_step(sa), "b": describe_step(sb)}
+               for i, (sa, sb) in enumerate(zip(a_spec["steps"], b_spec["steps"]))
+               if sa.get("op") == sb.get("op") and key(sa) != key(sb)]
     return {"rows": rows, "shared": sum(1 for r in rows if r["in"] == "both"),
-            "only_a": sum(1 for r in rows if r["in"] == "a"), "only_b": sum(1 for r in rows if r["in"] == "b")}
+            "only_a": sum(1 for r in rows if r["in"] == "a"), "only_b": sum(1 for r in rows if r["in"] == "b"),
+            "changed": changed}
 
 
-def _summary(o, comp, cov, outcomes, proto, a, b):
+def _versions(svc, user, a, b):
+    """When A and B are two versions of one saved cohort: which versions, and what happened between them (each
+    version's saved note, e.g. 'Step 4: Keep each sample once ...' from Fix it). None otherwise."""
+    va, vb = a.get("version"), b.get("version")
+    if not (va and vb and a["id"] == b["id"]):
+        return None
+    lo, hi = sorted((va["n"], vb["n"]))
+    between = [{"n": v["n"], "source": v.get("source"), "note": v.get("note") or ""}
+               for v in svc.db.list_versions(user, a["id"]) if lo < v["n"] <= hi]
+    return {"search_id": a["id"], "query": va["query"], "a": va["n"], "b": vb["n"], "newer": "b" if vb["n"] > va["n"] else "a",
+            "changes": between}
+
+
+SOURCE_WORDS = {"fix": "Fix it", "edit": "an edit", "draft": "the first run", "restore": "restoring an earlier version"}
+
+
+def _summary(o, comp, cov, outcomes, proto, a, b, versions=None):
     lines = []
-    if o["shared"] == 0:
+    if versions:
+        lines.append(f"A and B are versions {versions['a']} and {versions['b']} of the same cohort (“{versions['query']}”).")
+        for v in versions["changes"]:
+            how = SOURCE_WORDS.get(v["source"], v["source"] or "a change")
+            lines.append(f"Version {v['n']} came from {how}." + (f" {v['note']}" if v["note"] else ""))
+    for c in proto.get("changed", []):
+        lines.append(f"Step {c['step']} changed: {c['a']} → {c['b']}.")
+    if a.get("n_rows") != b.get("n_rows"):
+        twice = lambda x: (f" ({x['n_rows'] - x['n_samples']} more than once)"  # noqa: E731
+                           if x["n_rows"] > x["n_samples"] else "")
+        lines.append(f"Rows: A has {a['n_rows']} for {a['n_samples']} samples{twice(a)}; "
+                     f"B has {b['n_rows']} for {b['n_samples']} samples{twice(b)}.")
+    if o["only_a"] == 0 and o["only_b"] == 0 and o["shared"]:
+        lines.append(f"Both select exactly the same {o['shared']} samples, so who is in each, the data they have and "
+                     "their outcomes are identical; the difference is in how the steps count them.")
+    elif o["shared"] == 0:
         lines.append(f"The cohorts share no samples: A has {a['n_samples']} and B has {b['n_samples']}.")
     else:
         lines.append(f"A has {a['n_samples']} samples and B has {b['n_samples']}; {o['shared']} are in both "
@@ -240,9 +297,13 @@ def compare(svc, user, ref_a, ref_b):
     cov = _coverage(svc.store, a["ids"], b["ids"])
     outcomes = _outcomes(svc.store, a, b)
     proto = _protocol(a["spec"], b["spec"])
-    return {"a": a["meta"], "b": b["meta"], "overlap": overlap, "composition": comp, "coverage": cov,
-            "outcomes": outcomes, "protocol": proto,
-            "summary": _summary(overlap, comp, cov, outcomes, proto, a["meta"], b["meta"])}
+    versions = _versions(svc, user, a["meta"], b["meta"])
+    # two versions of one cohort are compared row by row (the double-count fix changes rows, not samples);
+    # two different cohorts are compared sample by sample, as `overlap` already does
+    overlap_rows = _row_overlap(a, b) if versions else None
+    return {"a": a["meta"], "b": b["meta"], "overlap": overlap, "overlap_rows": overlap_rows, "composition": comp, "coverage": cov,
+            "outcomes": outcomes, "protocol": proto, "versions": versions,
+            "summary": _summary(overlap, comp, cov, outcomes, proto, a["meta"], b["meta"], versions)}
 
 
 def metrics_for_model(c):

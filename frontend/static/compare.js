@@ -3,7 +3,9 @@ import { $, $$, h, s, ic, paintIcons, api, fmt, timeAgo, modeLabel, verdictLabel
 import { initTour, coachBlocked } from './tour.js';
 
 const params = new URLSearchParams(location.search);
-const state = { a: params.get('a'), b: params.get('b'), searches: [], favorites: [], ai: null, data: null, tab: 'recent', picking: 'a', km: 'pfi' };
+const state = { a: params.get('a'), b: params.get('b'), searches: [], favorites: [], ai: null, data: null, tab: 'recent', picking: 'a', km: 'pfi',
+  versions: {} };   // saved cohort id -> its versions (oldest first), loaded when a slot needs them
+const SOURCE_WORDS = { fix: 'Fix it', edit: 'Edited', draft: 'First run', restore: 'Restored' };
 const STATUS = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', unknown: 'OPEN' };
 
 const richify = parts => parts.map(p => (typeof p === 'string' ? rich(p) : p));
@@ -25,7 +27,40 @@ function itemsFor(tab) {
 }
 function info(ref) {
   if (!ref) return null;
+  const ver = parseVersion(ref);
+  if (ver) {   // 'v:<saved cohort id>:<version>': one saved state of a cohort
+    const sr = state.searches.find(x => x.id === ver.id);
+    const v = (state.versions[ver.id] || []).find(x => x.n === ver.n);
+    return { ref, id: ver.id, version: ver.n, label: sr ? sr.query : `Saved cohort ${ver.id}`, kind: `Version ${ver.n}`,
+      verdict: v && v.verdict, n: v && v.n_samples, patients: v && v.n_patients, when: v && v.created_at };
+  }
   return [...itemsFor('recent'), ...itemsFor('fav')].find(x => x.ref === ref) || { ref, label: ref, kind: ref.startsWith('f:') ? 'Favourite' : 'Saved cohort' };
+}
+const parseVersion = ref => {
+  const m = /^v:(\d+):(\d+)$/.exec(ref || '');
+  return m ? { id: Number(m[1]), n: Number(m[2]) } : null;
+};
+/** The saved cohort behind a reference ('s:12' or 'v:12:3' -> 12), or null (favourites). */
+const savedId = ref => {
+  const ver = parseVersion(ref);
+  if (ver) return ver.id;
+  const m = /^s:(\d+)$/.exec(ref || '');
+  return m ? Number(m[1]) : null;
+};
+/** Load a saved cohort's versions once, then redraw the slots (they show a version menu and "Compare its versions"). */
+async function ensureVersions(id) {
+  if (!id || state.versions[id]) return;
+  state.versions[id] = [];
+  try { state.versions[id] = (await api(`/api/searches/${id}/versions`)).versions || []; } catch { state.versions[id] = []; }
+  renderSlots();
+}
+/** A = the version before the cohort's last change, B = the latest (for example before and after Fix it). */
+function compareVersions(id) {
+  const vs = state.versions[id] || [];
+  if (vs.length < 2) return;
+  state.a = `v:${id}:${vs[vs.length - 2].n}`;
+  state.b = `v:${id}:${vs[vs.length - 1].n}`;
+  sync();
 }
 
 function renderSlots() {
@@ -39,15 +74,29 @@ function renderSlots() {
     }
     const x = info(ref);
     const live = state.data && state.data[side] && state.data[side].ref === ref ? state.data[side] : null;
+    const id = savedId(ref);
+    const vs = id ? state.versions[id] : null;
+    if (id && !vs) ensureVersions(id);
+    // a version: a menu of that cohort's versions; a saved cohort with history: a button to compare its last two
+    const kind = x.version && vs && vs.length
+      ? h('select', { class: 'slot-ver', 'aria-label': `Version of cohort ${letter}`, onchange: e => { state[side] = `v:${id}:${e.target.value}`; sync(); } },
+        vs.map(v => h('option', { value: v.n, selected: v.n === x.version || null, title: v.note || '' },
+          `Version ${v.n} · ${SOURCE_WORDS[v.source] || v.source || 'saved'}`)))
+      : h('span', { class: 'slot-kind' }, x.kind);
+    const versionsBtn = !x.version && vs && vs.length > 1
+      ? tipped(h('button', { type: 'button', class: 'btn small slot-vbtn', onclick: () => compareVersions(id) }, ic('history'), 'Compare its versions'),
+        `This cohort has ${vs.length} versions. Compare version ${vs[vs.length - 2].n} (before its last change) with version ${vs[vs.length - 1].n}.`)
+      : null;
     return h('div', { class: `slot ${side}` },
-      h('div', { class: 'slot-top' }, h('span', { class: 'slot-letter' }, letter), h('span', { class: 'slot-kind' }, x.kind),
+      h('div', { class: 'slot-top' }, h('span', { class: 'slot-letter' }, letter), kind,
         h('div', { class: 'slot-actions' },
           x.id ? h('a', { class: 'icon-btn', href: `/?open=${x.id}`, title: 'Open on the Build page', 'aria-label': 'Open on the Build page' }, ic('arrow-up-right')) : null,
           h('button', { type: 'button', class: 'icon-btn', title: 'Choose another', 'aria-label': `Choose another cohort ${letter}`, onclick: () => openPicker(side) }, ic('pencil')))),
       h('p', { class: 'slot-q' }, x.label),
       h('div', { class: 'slot-meta' }, verdictLabel(live ? live.verdict : x.verdict),
         `${fmt(live ? live.n_samples : x.n)} samples · ${fmt(live ? live.n_patients : x.patients)} patients`,
-        x.when ? h('span', { class: 'muted' }, timeAgo(x.when)) : null));
+        x.when ? h('span', { class: 'muted' }, timeAgo(x.when)) : null),
+      versionsBtn);
   };
   $('#slots').replaceChildren(slot('a'),
     h('button', { type: 'button', class: 'swap', title: 'Swap A and B', 'aria-label': 'Swap A and B', onclick: swap }, ic('arrow-left-right')), slot('b'));
@@ -148,12 +197,23 @@ function lens(r1, r2, d) {
   const c = 0.5 * Math.sqrt((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2));
   return a + b - c;
 }
+/** What the overlap counts: rows for two versions of one cohort (Fix it changes rows, not samples), samples for two
+ *  different cohorts. Same shape either way, so the diagram, tiles and bar don't need to know which. */
+function overlapView(d) {
+  const r = d.overlap_rows;
+  if (r) return { unit: 'rows', one: 'row', nA: r.a, nB: r.b, shared: r.shared, only_a: r.only_a, only_b: r.only_b, union: r.union,
+    jaccard: r.jaccard, coef: r.overlap_coefficient, extra: ['samples in both', r.samples_in_both] };
+  const o = d.overlap;
+  return { unit: 'samples', one: 'sample', nA: d.a.n_samples, nB: d.b.n_samples, shared: o.shared, only_a: o.only_a, only_b: o.only_b, union: o.union,
+    jaccard: o.jaccard, coef: o.overlap_coefficient, extra: ['shared patients', o.shared_patients] };
+}
 function venn(d) {
   const W = 460;
   const H = 260;
-  const nA = d.a.n_samples;
-  const nB = d.b.n_samples;
-  const sh = d.overlap.shared;
+  const v = overlapView(d);
+  const nA = v.nA;
+  const nB = v.nB;
+  const sh = v.shared;
   const R = 100;
   const k = (Math.PI * R * R) / Math.max(nA, nB, 1);
   const rA = Math.max(6, Math.sqrt((k * nA) / Math.PI));
@@ -170,7 +230,7 @@ function venn(d) {
   const cxA = left + rA;
   const cxB = cxA + dist;
   const cy = H / 2;
-  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'venn', role: 'img', 'aria-label': `A has ${nA} samples, B has ${nB}, ${sh} shared` });
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'venn', role: 'img', 'aria-label': `A has ${nA} ${v.unit}, B has ${nB}, ${sh} shared` });
   svg.append(s('circle', { cx: cxA, cy, r: rA, class: 'ca' }), s('circle', { cx: cxB, cy, r: rB, class: 'cb' }));
   const label = (x, n, text) => {
     const t1 = s('text', { x, y: cy + 2, class: 'vn' }); t1.textContent = fmt(n);
@@ -182,26 +242,37 @@ function venn(d) {
     const lensL = Math.max(cxA - rA, cxB - rB);
     const lensR = Math.min(cxA + rA, cxB + rB);
     label((lensL + lensR) / 2, sh, 'both');
-    if (d.overlap.only_a) label((cxA - rA + lensL) / 2, d.overlap.only_a, 'only A');
-    if (d.overlap.only_b) label((lensR + cxB + rB) / 2, d.overlap.only_b, 'only B');
+    // a crescent too thin for its label (two nearly equal circles, e.g. 776 vs 731 rows): put the label just outside
+    const thin = 46;
+    if (v.only_a) label(lensL - (cxA - rA) < thin ? cxA - rA - 30 : (cxA - rA + lensL) / 2, v.only_a, 'only A');
+    if (v.only_b) label((cxB + rB) - lensR < thin ? cxB + rB + 30 : (lensR + cxB + rB) / 2, v.only_b, 'only B');
   }
   return svg;
 }
+/** Under the row diagram: what the rows only in one version are ("45 rows only in A: extra rows for samples it counted
+ *  more than once, 776 rows for 731 samples") and how many samples the two share. */
+function rowCaption(d) {
+  const r = d.overlap_rows;
+  const side = (n, x, letter) => (n ? `${fmt(n)} ${n === 1 ? 'row' : 'rows'} only in ${letter}: extra rows for samples ${letter} counted more than once (${fmt(x.n_rows)} rows for ${fmt(x.n_samples)} samples). ` : '');
+  const same = !d.overlap.only_a && !d.overlap.only_b;
+  return h('p', { class: 'vd-note venn-cap' }, side(r.only_a, d.a, 'A'), side(r.only_b, d.b, 'B'),
+    same ? `Both versions have the same ${fmt(r.samples_in_both)} samples.` : `${fmt(r.samples_in_both)} samples are in both versions.`);
+}
 function tiles(d) {
-  const o = d.overlap;
+  const o = overlapView(d);
   const t = (cls, v, label, isNum = true) => h('div', { class: `tile ${cls}` }, h('div', { class: 'tv', ...(isNum ? { 'data-count': String(v) } : {}) }, isNum ? (G() ? '0' : fmt(v)) : v), h('div', { class: 'tl' }, rich(label)));
   return h('div', { class: 'tiles' },
-    t('a', d.a.n_samples, 'samples in A'), t('b', d.b.n_samples, 'samples in B'), t('', o.shared, 'shared samples'), t('', o.jaccard.toFixed(2), 'Jaccard index', false),
-    t('a', o.only_a, 'only in A'), t('b', o.only_b, 'only in B'), t('', o.shared_patients, 'shared patients'), t('', `${Math.round(100 * o.overlap_coefficient)}%`, 'of the smaller one is shared', false));
+    t('a', o.nA, `${o.unit} in A`), t('b', o.nB, `${o.unit} in B`), t('', o.shared, `shared ${o.unit}`), t('', o.jaccard.toFixed(2), 'Jaccard index', false),
+    t('a', o.only_a, `${o.unit} only in A`), t('b', o.only_b, `${o.unit} only in B`), t('', o.extra[1], o.extra[0]), t('', `${Math.round(100 * o.coef)}%`, 'of the smaller one is shared', false));
 }
 function stack(d) {
-  const o = d.overlap;
+  const o = overlapView(d);
   const u = Math.max(1, o.union);
   return h('div', { class: 'stack' },
     h('div', { class: 'stack-bar', role: 'img', 'aria-label': `Only A ${o.only_a}, both ${o.shared}, only B ${o.only_b}` },
       h('i', { class: 'sa', style: `width:${(100 * o.only_a) / u}%` }), h('i', { class: 'sab', style: `width:${(100 * o.shared) / u}%` }), h('i', { class: 'sb', style: `width:${(100 * o.only_b) / u}%` })),
     h('div', { class: 'stack-key' }, h('span', { style: '--k:var(--haem)' }, `Only A ${fmt(o.only_a)}`), h('span', { style: '--k:var(--ink)' }, `Both ${fmt(o.shared)}`),
-      h('span', { style: '--k:var(--eosin)' }, `Only B ${fmt(o.only_b)}`), h('span', { class: 'muted' }, `${fmt(o.union)} samples in either`)));
+      h('span', { style: '--k:var(--eosin)' }, `Only B ${fmt(o.only_b)}`), h('span', { class: 'muted' }, `${fmt(o.union)} ${o.unit} in either`)));
 }
 
 function compCard(c) {
@@ -366,11 +437,41 @@ function renderInsights(card, x) {
   if (g) g.from(card.children, { y: 10, autoAlpha: 0, duration: 0.5, stagger: 0.07, ease: 'power3.out', clearProps: 'transform,opacity,visibility' });
 }
 
+/** Two versions of one saved cohort: what happened between them, the steps that changed, and what that did to the counts. */
+function versionDiff(d) {
+  const V = d.versions;
+  const head = side => `${side.toUpperCase()} · v${V[side]}`;
+  const tr = (k, a, b) => h('tr', {}, h('th', { scope: 'row' }, k), h('td', {}, a), h('td', {}, b));
+  const changed = d.protocol.changed || [];
+  const same = d.overlap.only_a === 0 && d.overlap.only_b === 0;
+  const twice = x => (x.n_rows > x.n_samples ? h('span', { class: 'vd-bad' }, ` (${fmt(x.n_rows - x.n_samples)} counted more than once)`) : null);
+  return h('div', { class: 'vdiff' },
+    h('ol', { class: 'vd-log' }, V.changes.map(c => h('li', {},
+      h('b', {}, `Version ${c.n}`), h('span', { class: 'vd-src' }, SOURCE_WORDS[c.source] || c.source || 'saved'), c.note ? rich(c.note) : null))),
+    // one table, so the steps that changed and the counts line up under the same A and B columns
+    h('table', { class: 'fx-table vd-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', { scope: 'col' }, head('a')), h('th', { scope: 'col' }, head('b')))),
+      h('tbody', {},
+        ...changed.map(c => tr(`Step ${c.step}`, rich(c.a), rich(c.b))),
+        tr('Rows', h('span', {}, fmt(d.a.n_rows), twice(d.a)), h('span', {}, fmt(d.b.n_rows), twice(d.b))),
+        tr('Samples', fmt(d.a.n_samples), fmt(d.b.n_samples)),
+        tr('Patients', fmt(d.a.n_patients), fmt(d.b.n_patients)),
+        tr('Verdict', verdictLabel(d.a.verdict), verdictLabel(d.b.verdict)))),
+    h('p', { class: 'vd-note' }, same
+      ? `Both versions select exactly the same ${fmt(d.overlap.shared)} samples, so who is in each, their data and their outcomes below are identical. The difference is in how the steps count them: the overlap below is counted in rows.`
+      : `${fmt(d.overlap.only_a)} samples are only in ${head('a')} and ${fmt(d.overlap.only_b)} only in ${head('b')}: the sections below show who they are.`));
+}
+
 function renderResults(d) {
   const host = $('#c-results');
   host.replaceChildren(
-    section('overlap', 'layers', 'Overlap', 'Who is in both cohorts, and who is in only one. Circle areas are proportional to sample counts.',
-      h('div', { class: 'overview' }, venn(d), h('div', {}, tiles(d), stack(d)))),
+    d.versions ? section('versions', 'history', 'What changed between versions',
+      'A and B are two saved versions of the same cohort: what happened between them, which steps changed, and what that did to the counts.', versionDiff(d)) : '',
+    d.overlap_rows
+      ? section('overlap', 'layers', 'Overlap in rows', 'Two versions of one cohort, compared row by row: each sample\'s rows are matched, so a row only in one version is an extra row that version had (for example a sample counted twice before Fix it). Circle areas are proportional to row counts.',
+        h('div', { class: 'overview' }, h('div', {}, venn(d), rowCaption(d)), h('div', {}, tiles(d), stack(d))))
+      : section('overlap', 'layers', 'Overlap', 'Who is in both cohorts, and who is in only one. Circle areas are proportional to sample counts.',
+        h('div', { class: 'overview' }, venn(d), h('div', {}, tiles(d), stack(d)))),
     section('summary', 'list-checks', 'What the numbers say', 'Computed directly from the metrics below; no model involved.',
       h('ul', { class: 'summary-list' }, d.summary.map(line => h('li', {}, ic('arrow-right'), h('span', {}, rich(line)))))),
     section('insights', 'lightbulb', 'AI insights', 'Differences, shared ground, which analysis each cohort suits, and what to check.', insightsCard(d)),
