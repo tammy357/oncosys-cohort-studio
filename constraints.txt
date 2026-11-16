@@ -1,0 +1,18 @@
+# Exact versions the test suite passed with (Python 3.13, Nov 2026). CI installs with these, and so can you:
+#   pip install -r requirements.txt -r frontend/requirements.txt -c constraints.txt
+# cohort_spec.json records the Python, pandas and numpy versions (and the code's commit) each cohort was built with.
+anyio==4.15.1
+cryptography==50.0.1
+fastapi==0.162.5
+httpx==0.28.1
+jsonschema==4.26.0
+matplotlib==3.11.2
+numpy==2.5.3
+pandas==3.0.5
+pydantic==2.13.5
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+SQLAlchemy==2.1.8
+starlette==1.7.0
+streamlit==1.67.0
+uvicorn==0.54.0

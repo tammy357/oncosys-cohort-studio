@@ -9,6 +9,7 @@ import pandas as pd
 from . import ops
 from .engine import PREFIX, extra_cohort_columns
 from .spec import condition_sources, describe_step, resolve_condition
+from .verdict import PROBLEM_HEADLINES, is_flagged_shift
 
 
 def fixes_by_step(result):
@@ -275,6 +276,12 @@ def reproduce_script(result, store):
     return "\n".join(lines)
 
 
+CHECK_KINDS = {"Filter fields are recorded for most samples": "missing_data",
+               "The outcome you named is recorded for the cohort": "missing_data",
+               "One sample per patient": "duplicate",
+               "Files match the event's frozen checksums": "membership_change"}
+
+
 def findings_document(result, verdict, store, team="Cohort Studio team"):
     """The shared findings format (v0.2), so Evidence Navigator tools can read our checks."""
     files = []
@@ -307,7 +314,8 @@ def findings_document(result, verdict, store, team="Cohort Studio team"):
                          "limitation": "Fixed before export; the cohort file has one row per sample.",
                          "needs_human_review": False})
     for s in result.steps:
-        big = {k: v for k, v in s.shift.items() if v["tvd"] >= 0.10 and k != "Sample type" and not v.get("expected")}
+        big = {k: v for k, v in s.shift.items()
+               if k != "Sample type" and not v.get("expected") and is_flagged_shift(v)}
         if big:
             n += 1
             var, info = max(big.items(), key=lambda kv: kv[1]["tvd"])
@@ -319,8 +327,23 @@ def findings_document(result, verdict, store, team="Cohort Studio team"):
                              "evidence": [{"kind": "sample", "id": sid} for sid in s.removed[:10]],
                              "limitation": "The shift shows who was removed, not why their data is missing.",
                              "needs_human_review": True})
+    # Every other check that didn't pass gets a finding too, so findings.json and the verdict always agree.
+    covered = {"No sample is counted twice"} | ({"The cohort still looks like the population it started from"}
+                                               if any(f["kind"] == "missing_data" for f in findings) else set())
+    for c in verdict.checks:
+        if c.status == "pass" or c.name in covered:
+            continue
+        n += 1
+        findings.append({"id": f"F{n}", "kind": CHECK_KINDS.get(c.name, "other"),
+                         "summary": f"{PROBLEM_HEADLINES.get(c.name, c.name)}. {c.detail}",
+                         "severity": {"fail": "high", "unknown": "medium", "warn": "medium"}[c.status],
+                         "confidence": "medium",
+                         "evidence": [{"kind": "file", "id": f} for f in c.fields if f.endswith((".csv", ".tsv", ".gz"))]
+                         or [{"kind": "analysis", "id": "verdict-check"}],
+                         "limitation": c.review or "See verdict.json for the check.",
+                         "needs_human_review": True})
     if not findings:
-        findings.append({"id": "F1", "kind": "other", "summary": "No join inflation or composition shift above 0.10 was found.",
+        findings.append({"id": "F1", "kind": "other", "summary": "Every check passed: no join inflation, no composition shift beyond chance, and no other problem was found.",
                          "severity": "none", "confidence": "medium",
                          "evidence": [{"kind": "file", "id": "sample_manifest.csv"}], "needs_human_review": False})
     return {
@@ -333,10 +356,33 @@ def findings_document(result, verdict, store, team="Cohort Studio team"):
     }
 
 
+def environment():
+    """Python and package versions, plus the code's git commit when known, so a rebuild can match them."""
+    import platform
+    import subprocess
+    from importlib import metadata
+    env = {"python": platform.python_version()}
+    for pkg in ("pandas", "numpy"):
+        try:
+            env[pkg] = metadata.version(pkg)
+        except metadata.PackageNotFoundError:
+            pass
+    try:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        commit = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"], capture_output=True,
+                                text=True, timeout=5).stdout.strip()
+        if commit:
+            env["cohort_studio_commit"] = commit
+    except Exception:
+        pass
+    return env
+
+
 def write_all(result, verdict, store, out_dir, team="Cohort Studio team"):
     out = pathlib.Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     cohort_frame(result).to_csv(out / "cohort_samples.csv", index=False)
+    result.spec["environment"] = environment()
     (out / "cohort_spec.json").write_text(json.dumps(result.spec, indent=2))
     ledger_frame(result).to_csv(out / "ledger.csv", index=False)
     exclusions_frame(result).to_csv(out / "exclusions.csv", index=False)

@@ -12,6 +12,7 @@ reproduce_cohort.py and the other exports to out_dir.
 """
 import copy
 import dataclasses
+import datetime
 import json
 import pathlib
 import re
@@ -121,11 +122,37 @@ def _run(spec, store, fix):
     return spec, first, first, []
 
 
+def sign_off(reviewer, role=None, note=None):
+    """A named confirmation, recorded in the spec and quoted in the verdict."""
+    if not reviewer or not str(reviewer).strip():
+        raise ValueError("Confirming a cohort needs the name of the person confirming it (reviewer).")
+    out = {"name": str(reviewer).strip(), "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
+    if role:
+        out["role"] = str(role).strip()
+    if note:
+        out["note"] = str(note).strip()
+    return out
+
+
+def _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome):
+    if outcome:
+        spec["intended_use"] = {**(spec.get("intended_use") or {}), "outcome": outcome}
+    if accept_unparsed:
+        spec["unparsed_confirmed"] = True
+        spec["sign_off"] = signed
+    return spec
+
+
 def build_cohort(query, out_dir="output", store=None, data_dir=None, ai="auto", fix=True, accept_unparsed=False,
-                 team="Cohort Studio team", write=True, log=None, drafter=None, **ai_options):
+                 team="Cohort Studio team", write=True, log=None, drafter=None, reviewer=None, reviewer_role=None,
+                 review_note=None, outcome=None, **ai_options):
     """Draft (if needed), run, fix inflation, evaluate and export one cohort. ai: "auto", "own" or "off" (see
     llm.draft_spec); ai_options: provider, api_key, model, base_url or client for your own model. drafter: a
-    function request -> (spec, route) used instead of llm.draft_spec (the hosted MCP server drafts on the server)."""
+    function request -> (spec, route) used instead of llm.draft_spec (the hosted MCP server drafts on the server).
+    accept_unparsed: confirm unused words and open readings; it needs reviewer (a name), recorded with the date,
+    reviewer_role and review_note in the spec and quoted in the verdict. outcome: the field the cohort is meant for
+    (for example "pfi"), so the verdict checks it is recorded, with enough events, for the cohort."""
+    signed = sign_off(reviewer, reviewer_role, review_note) if accept_unparsed else None
     store = store or DataStore(data_dir)
     kind, q = as_query(query)
     if kind == "spec":
@@ -134,15 +161,14 @@ def build_cohort(query, out_dir="output", store=None, data_dir=None, ai="auto", 
         spec, route = drafter(q)
     else:
         spec, route = draft_spec(q, store, ai=ai, log=log, **ai_options)
-    if accept_unparsed:
-        spec["unparsed_confirmed"] = True
+    spec = _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome)
     spec, result, first, fixes = _run(spec, store, fix)
     if not result.ok and kind == "text" and route["used"] in ("own", "hosted"):
         # The AI draft passed the checks but a step failed on this computer's data: draft it with the parser instead.
         error = next((s.error for s in result.steps if s.error), "a step failed")
         rules = parse_request(q, store)
         rules["notes"].append(f"The AI draft didn't run here ({error}), so the built-in parser drafted the steps.")
-        rules["unparsed_confirmed"] = bool(accept_unparsed)
+        rules = _apply_use_and_sign_off(rules, accept_unparsed, signed, outcome)
         r_spec, r_result, r_first, r_fixes = _run(rules, store, fix)
         if r_result.ok:
             spec, result, first, fixes = r_spec, r_result, r_first, r_fixes
