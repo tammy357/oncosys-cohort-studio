@@ -560,6 +560,10 @@ survival from Liu et al., *Cell* 2018, and slide metadata from NCI Imaging Data 
 | [`tests/`](tests/) | Tests on a synthetic fixture (made-up `TCGA-ZZ-…` barcodes) and the real manifests |
 | [`CHALLENGE_README.md`](CHALLENGE_README.md) | The organizers' original README |
 
+## Licence
+
+Our own code is released under the MIT licence (see [LICENSE](LICENSE)). The organizers' challenge files and the TCGA-derived data keep their own terms: see [DATA_LICENSES.md](DATA_LICENSES.md).
+
 ## Third-party code
 
 pandas (BSD-3-Clause), Streamlit (Apache-2.0), Matplotlib (Matplotlib/PSF licence), jsonschema (MIT),
