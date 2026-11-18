@@ -28,7 +28,7 @@ see who the steps removed and get a verdict → export `cohort_samples.csv` and 
 
 ## Quick start (from a fresh clone, about 5 minutes)
 
-Tested with Python 3.13, 3.14 and 3.15 on macOS and Linux. On some systems the command is `python3` instead of `python`.
+Tested with Python 3.13, 3.14 and 3.15 on macOS and Linux (CI runs all three). For the exact package versions the tests passed with, add `-c constraints.txt` to any `pip install`; each `cohort_spec.json` records the Python, pandas and numpy versions it was built with. On some systems the command is `python3` instead of `python`.
 
 **1. Get the code and a clean environment**
 
@@ -214,6 +214,21 @@ the same samples, that's it. If they differ, one short extra AI call compares th
 counts and any words the parser skipped. It keeps the AI draft, the parser's draft, or a mix of their steps; a mix
 may only reuse steps from the two drafts. The notes say which one was kept and why. Whatever is kept, every step is
 checked against the release before it runs, and every count comes from the engine, never from the model.
+
+### Saying what the cohort is for, and who confirmed it
+
+```bash
+# Check that the outcome you will analyse is recorded for this cohort (and, for survival, has at least 10 events)
+python -m cohort_studio "basal-like primary tumours with progression-free interval" --outcome pfi
+
+# Confirm words the parser didn't use (or readings the AI chose): a confirmation must name who made it
+python -m cohort_studio "primary tumours with purity above 60%" --accept-unparsed \
+    --reviewer "Your Name" --reviewer-role statistician --review-note "purity isn't in this release"
+```
+
+`--outcome` takes any field name that `--fields` lists (for example `pfi`, `os`, `er_status`). The reviewer's name,
+role, note and the date are saved in `cohort_spec.json` and quoted in the verdict. In the Streamlit app, the
+confirmation box asks for a name first. See [VERDICT_RULES.md](VERDICT_RULES.md) for both checks.
 
 ### What you get
 

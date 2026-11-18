@@ -9,7 +9,11 @@ from .spec import condition_sources, condition_tests, describe_step
 
 MIN_PATIENTS = 20          # fewer patients than this: Blocked
 SHIFT_WARN = 0.10          # total variation distance at or above this: Conditional
+SHIFT_ALPHA = 0.05         # ...and random dropout of the same size moves it that far less often than this
 MISSING_WARN = 0.20        # a filter field missing for at least this share of samples: Conditional
+OUTCOME_COVERAGE = 0.80    # the stated outcome recorded for fewer cohort samples than this: Conditional
+MIN_EVENTS = 10            # fewer events than this for a survival outcome: Conditional
+SURVIVAL_EVENTS = ("os", "pfi", "dss", "dfi")
 SOURCE_FILES = {"slides": "slide_manifest.csv", "clinical": "clinical.tsv", "survival": "survival.tsv",
                 "normals": "sample_manifest.csv", "manifest": "sample_manifest.csv",
                 "mutation": "mutation_gene_level.tsv.gz"}
@@ -51,6 +55,31 @@ class Verdict:
 def _is_unknown(message):
     m = message.lower()
     return "isn't available" in m or "checksum" in m or "fetch.py" in m or "aren't recorded" in m
+
+def is_flagged_shift(info):
+    """A shift counts against the cohort when it is at least SHIFT_WARN and random dropout of the same size would
+    rarely cause it (permutation p < SHIFT_ALPHA). When the test can't run (for example a join added samples, or the
+    characteristic has missing values) the TVD rule alone decides, as before."""
+    if info["tvd"] < SHIFT_WARN:
+        return False
+    p = info.get("p_value")
+    return p is None or p < SHIFT_ALPHA
+
+
+def _within_chance(info):
+    return info["tvd"] >= SHIFT_WARN and not is_flagged_shift(info)
+
+
+def sign_off_text(spec):
+    """'Confirmed by Name (role), 2026-11-16: note' for a named confirmation, or '' if nobody is named."""
+    so = spec.get("sign_off") or {}
+    if not so.get("name"):
+        return ""
+    who = so["name"] + (f" ({so['role']})" if so.get("role") else "")
+    when = f", {so['at'][:10]}" if so.get("at") else ""
+    note = f": {so['note']}" if so.get("note") else ""
+    return f"Confirmed by {who}{when}{note}"
+
 
 def _p_note(info):
     p = info.get("p_value")
@@ -125,8 +154,10 @@ def evaluate(result, store):
                             "Rewrite the request (for example 'stage 3' or 'older than 50') or add the missing step, "
                             "or confirm the unused words don't change the cohort."))
     else:
+        signed = sign_off_text(spec)
         detail = "Every part of the request maps to a step." if not unparsed else \
-            f"Unused words ({', '.join(unparsed)}) were confirmed as not changing the cohort."
+            f"Unused words ({', '.join(unparsed)}) were confirmed as not changing the cohort." + \
+            (f" {signed}." if signed else " Nobody was named as confirming this.")
         checks.append(Check("The whole request was turned into steps", "pass", detail))
     # 2b. Readings of the request that the draft settled without anyone choosing them (a default answer to a question,
     #     the only answer that runs, or a reading the comparison found open). Confirming the draft confirms them.
@@ -137,8 +168,10 @@ def evaluate(result, store):
                             + ". A different reading would select a different cohort.",
                             "Answer the question or edit the steps, or confirm these readings are what you meant."))
     elif unconfirmed:
+        signed = sign_off_text(spec)
         checks.append(Check("Every open reading of the request was confirmed", "pass",
-                            "A person confirmed these readings: " + "; ".join(unconfirmed) + "."))
+                            "A person confirmed these readings: " + "; ".join(unconfirmed) + "."
+                            + (f" {signed}." if signed else " Nobody was named as confirming them.")))
 
     # 3. Frozen files
     used = {"sample_manifest.csv"}
@@ -234,13 +267,19 @@ def evaluate(result, store):
         checks.append(Check("Enough patients to work with", "pass", f"{n_pat:,} patients (minimum {MIN_PATIENTS})."))
 
     # 7. Who did the steps remove? (composition shift)
-    shifts, expected = [], []
+    shifts, expected, chance = [], [], []
     for s in result.steps:
         for var, info in s.shift.items():
-            if info["tvd"] >= SHIFT_WARN and var != "Sample type":
-                (expected if info.get("expected") else shifts).append((s, var, info))
-    big_overall = {k: v for k, v in result.overall_shift.items() if v["tvd"] >= SHIFT_WARN and k != "Sample type"}
-    overall = {k: v for k, v in big_overall.items() if not v.get("expected")}
+            if var == "Sample type" or info["tvd"] < SHIFT_WARN:
+                continue
+            if info.get("expected"):
+                expected.append((s, var, info))
+            elif is_flagged_shift(info):
+                shifts.append((s, var, info))
+            else:
+                chance.append((s, var, info))
+    overall = {k: v for k, v in result.overall_shift.items()
+               if k != "Sample type" and not v.get("expected") and is_flagged_shift(v)}
     comp_cols = [c for c in store.composition_frame().columns if c not in ("patient_id",)]
     expected_note = ""
     if expected:
@@ -248,18 +287,27 @@ def evaluate(result, store):
                          + "; ".join(f"step {s.index + 1} moved {var} by {info['tvd']:.2f} ({info['group']}: "
                                      f"{info['before_pct']}% → {info['after_pct']}%), because {info['expected']}"
                                      for s, var, info in expected[:3]) + ".")
+    chance_note = ""
+    if chance:
+        chance_note = (" Within what random dropout of the same size produces, so not flagged: "
+                       + "; ".join(f"step {s.index + 1} moved {var} by {info['tvd']:.2f} (p = {info['p_value']:.2f}; "
+                                   f"random dropout gives up to {info.get('random_tvd_95', 0):.2f} in 95% of draws)"
+                                   for s, var, info in chance[:3]) + ".")
     if shifts or overall:
         parts = [f"step {s.index + 1} moved {var} by {info['tvd']:.2f} (largest change: {info['group']}, "
                  f"{info['before_pct']}% → {info['after_pct']}%{_p_note(info)})" for s, var, info in shifts[:3]]
         parts += [f"overall, {var} moved by {info['tvd']:.2f} ({info['group']}: {info['before_pct']}% → {info['after_pct']}%{_p_note(info)})"
                   for var, info in list(overall.items())[:2]]
         checks.append(Check("The cohort still looks like the population it started from", "warn",
-                            "; ".join(parts) + "." + expected_note,
+                            "; ".join(parts) + "." + expected_note + chance_note,
                             "Check whether the shifted groups matter for your question, and report the shift.",
                             fields=comp_cols))
     elif expected:
         checks.append(Check("The cohort still looks like the population it started from", "pass",
-                            "No unexpected shift." + expected_note, fields=comp_cols))
+                            "No unexpected shift." + expected_note + chance_note, fields=comp_cols))
+    elif chance:
+        checks.append(Check("The cohort still looks like the population it started from", "pass",
+                            "No shift beyond chance." + chance_note, fields=comp_cols))
     else:
         checks.append(Check("The cohort still looks like the population it started from", "pass",
                             f"No step moved {', '.join(comp_cols)} by {SHIFT_WARN} or more.", fields=comp_cols))
@@ -286,12 +334,56 @@ def evaluate(result, store):
                             "Choose diagnostic or frozen slides unless you need both."))
     os_used = [s for s in steps if s.get("op") == "filter" and s["table"] == "survival" and s["field"] == "os"] \
         + [t for t in _condition_tests(steps) if t.get("table") == "survival" and t.get("field") == "os"]
-    if os_used:
+    use = spec.get("intended_use") or {}
+    if os_used or use.get("outcome") == "os":
         checks.append(Check("Survival endpoint suits breast cancer", "warn",
                             "The TCGA Clinical Data Resource (Liu et al., Cell 2018) advises caution with overall "
                             "survival for BRCA because follow-up is short, and recommends the progression-free interval.",
                             "Consider PFI instead of OS."))
+    # 10. The stated outcome: is it recorded, with enough events, for this cohort?
+    if use.get("outcome"):
+        checks.append(outcome_check(use, result, store, n_ids))
     return _decide(checks, result, store)
+
+
+def outcome_check(use, result, store, n_ids):
+    """Coverage (and, for a survival endpoint, the number of events) of the outcome the cohort is meant for."""
+    from . import ops
+    name = "The outcome you named is recorded for the cohort"
+    field, table = use["outcome"], use.get("outcome_table") or (
+        "survival" if use["outcome"] in ("os", "os_time", "pfi", "pfi_time", "dss", "dfi") else "clinical")
+    if not store.available(table):
+        return Check(name, "unknown", f"The {table} file isn't available, so {field} can't be checked.",
+                     "Fetch the data with data/tcga-brca/fetch.py and run again.", fields=[field])
+    col = store.resolve_field(table, field)
+    t = store.table(table)
+    if not col or col not in t.columns:
+        return Check(name, "unknown", f"This release has no column for the outcome '{field}' in {table}.",
+                     "Check the outcome's name (python -m cohort_studio --fields lists them).", fields=[field])
+    t = t.drop_duplicates("sample_id").set_index("sample_id") if "sample_id" in t.columns else t
+    values = t[col].reindex(list(result.cohort_ids))
+    recorded = values[~values.map(ops.is_missing)]
+    share = len(recorded) / n_ids if n_ids else 0
+    label = store.field_label(table, field)
+    detail = f"{label} ({col}) is recorded for {len(recorded):,} of {n_ids:,} samples ({share:.0%})"
+    problems = []
+    if share < OUTCOME_COVERAGE:
+        problems.append(f"under {OUTCOME_COVERAGE:.0%}")
+    if field in SURVIVAL_EVENTS:
+        events = int((ops_numeric(recorded) == 1).sum())
+        detail += f", with {events:,} events"
+        if events < MIN_EVENTS:
+            problems.append(f"fewer than {MIN_EVENTS} events")
+    if problems:
+        return Check(name, "warn", detail + " (" + " and ".join(problems) + ").",
+                     "Samples without the outcome can't contribute to the analysis; report how many and why, or "
+                     "choose a better-recorded outcome.", fields=[col])
+    return Check(name, "pass", detail + ".", fields=[col])
+
+
+def ops_numeric(series):
+    import pandas as pd
+    return pd.to_numeric(series, errors="coerce")
 
 
 # What a failing check means, in plain words. The check names describe the passing state, so they read wrongly
@@ -299,6 +391,7 @@ def evaluate(result, store):
 PROBLEM_HEADLINES = {
     "Every step runs on this release": "A step can't run on this release",
     "The whole request was turned into steps": "Part of the request wasn't used",
+    "Every open reading of the request was confirmed": "Part of the request could be read more than one way",
     "Files match the event's frozen checksums": "A data file doesn't match the frozen release",
     "No sample is counted twice": "Some samples are counted twice",
     "One sample per patient": "Some patients contribute more than one sample",
@@ -307,7 +400,8 @@ PROBLEM_HEADLINES = {
     "The cohort still looks like the population it started from": "The cohort's mix shifted",
     "Filter fields are recorded for most samples": "A filter field is missing for many samples",
     "Slides are of one kind": "Diagnostic and frozen slides are mixed",
-    "Survival endpoint suits BRCA": "The survival endpoint needs care for BRCA",
+    "Survival endpoint suits breast cancer": "The survival endpoint needs care for breast cancer",
+    "The outcome you named is recorded for the cohort": "The outcome is missing or rare in this cohort",
 }
 
 
@@ -335,9 +429,12 @@ def limitations_for(result, store):
     steps = result.spec.get("steps", [])
     out = ["Counts come from the event's frozen TCGA-BRCA release (UCSC Xena and NCI Imaging Data Commons). "
            "Other versions of TCGA can contain different samples.",
-           "Composition shift thresholds (0.10) are conventions, not validated cut-offs. A shift shows who a step "
-           "removed; it can't say why those samples lack data.",
+           "Composition shift thresholds (TVD 0.10, permutation p < 0.05) are conventions, not validated cut-offs. A "
+           "shift shows who a step removed; it can't say why those samples lack data.",
            "This is a research tool. It makes no diagnosis, treatment recommendation or clinical claim."]
+    if not (result.spec.get("intended_use") or {}).get("outcome"):
+        out.append("No outcome was named, so the verdict doesn't check whether the outcome you will analyse is recorded "
+                   "for this cohort. Name one (for example --outcome pfi) to add that check; coverage.csv lists every field.")
     fields = {s.get("field") for s in steps if s.get("op") == "filter"} \
         | {t.get("field") for t in _condition_tests(steps) if "table" in t}
     if fields & {"er_status", "pr_status", "her2_status"}:

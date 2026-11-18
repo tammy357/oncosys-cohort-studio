@@ -144,9 +144,19 @@ for note in spec.get("notes", []):
 if spec.get("unparsed"):
     st.warning(f"These words weren't turned into steps: **{', '.join(spec['unparsed'])}**. "
                "Add a step for them, or confirm they don't change the cohort.")
-    spec["unparsed_confirmed"] = st.checkbox("I've checked: these words don't change the cohort",
-                                             value=bool(spec.get("unparsed_confirmed")),
-                                             key=f"confirm_{st.session_state.get('editor_version', 0)}")
+    reviewer = st.text_input("Your name (recorded with the confirmation)",
+                             value=(spec.get("sign_off") or {}).get("name", ""),
+                             key=f"reviewer_{st.session_state.get('editor_version', 0)}")
+    confirmed = st.checkbox("I've checked: these words don't change the cohort",
+                            value=bool(spec.get("unparsed_confirmed")), disabled=not reviewer.strip(),
+                            key=f"confirm_{st.session_state.get('editor_version', 0)}")
+    spec["unparsed_confirmed"] = bool(confirmed and reviewer.strip())
+    if spec["unparsed_confirmed"]:
+        from cohort_studio.api import sign_off
+        if (spec.get("sign_off") or {}).get("name") != reviewer.strip():
+            spec["sign_off"] = sign_off(reviewer)
+    else:
+        spec.pop("sign_off", None)
 
 edited = st.data_editor(
     steps_to_table(spec["steps"]), key=f"editor_{st.session_state.get('editor_version', 0)}",
@@ -227,7 +237,8 @@ for s in [s for s in result.steps if s.op == "one_per_patient" and not s.skipped
 # ---------------- 4. who was removed ----------------
 st.subheader("4 · Who did the steps remove?")
 st.caption("Total variation distance (TVD): 0 means the mix of a group is unchanged, 1 means no overlap. "
-           f"A step that moves any mix by {verdict.SHIFT_WARN} or more is flagged. Fields you filtered on are left out.")
+           f"A step that moves any mix by {verdict.SHIFT_WARN} or more, by more than random dropout of the same size "
+           f"would (permutation p < {verdict.SHIFT_ALPHA}), is flagged. Fields you filtered on are left out.")
 shift_rows = []
 for s in result.steps:
     for var, info in s.shift.items():
@@ -236,8 +247,10 @@ for s in result.steps:
         shift_rows.append({"step": s.index + 1, "what it does": s.label, "samples removed": len(s.removed),
                            "characteristic": var, "TVD": info["tvd"],
                            "largest change": f"{info['group']}: {info['before_pct']}% → {info['after_pct']}%",
+                           "p vs random": info.get("p_value"),
                            "flag": ("" if info["tvd"] < verdict.SHIFT_WARN else
-                                    "expected" if info.get("expected") else "SHIFT"),
+                                    "expected" if info.get("expected") else
+                                    "SHIFT" if verdict.is_flagged_shift(info) else "within chance"),
                            "why expected": info.get("expected", "") if info["tvd"] >= verdict.SHIFT_WARN else ""})
 if shift_rows:
     sdf = pd.DataFrame(shift_rows).sort_values("TVD", ascending=False)

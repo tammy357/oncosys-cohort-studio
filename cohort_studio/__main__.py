@@ -31,7 +31,13 @@ def main(argv=None):
     ap.add_argument("--data-dir", help="folder with sample_manifest.csv (default: data/tcga-brca)")
     ap.add_argument("--out", default="output", help="folder for cohort_samples.csv and the other exports")
     ap.add_argument("--no-fix", action="store_true", help="don't fix inflating joins (shows the problem only)")
-    ap.add_argument("--accept-unparsed", action="store_true", help="confirm that unused words don't change the cohort and that open readings are what you meant")
+    ap.add_argument("--accept-unparsed", action="store_true", help="confirm that unused words don't change the cohort "
+                    "and that open readings are what you meant (needs --reviewer)")
+    ap.add_argument("--reviewer", help="name of the person confirming (recorded in cohort_spec.json and the verdict)")
+    ap.add_argument("--reviewer-role", help="their role, e.g. 'statistician'")
+    ap.add_argument("--review-note", help="what they checked")
+    ap.add_argument("--outcome", help="the field the cohort is for, e.g. pfi, os or er_status: the verdict checks it is "
+                                      "recorded (and, for survival, has enough events) for this cohort")
     ap.add_argument("--rules", action="store_true", help="built-in parser only: no AI, nothing leaves this computer")
     ap.add_argument("--no-hosted", action="store_true", help="your own key or local model only, never the hosted service")
     ap.add_argument("--ai", choices=["anthropic", "openai"], help="which provider your own key is for (default: "
@@ -40,6 +46,8 @@ def main(argv=None):
     ap.add_argument("--fields", action="store_true", help="list the fields and values available in this release")
     args = ap.parse_args(argv)
 
+    if args.accept_unparsed and not (args.reviewer or "").strip():
+        ap.error("--accept-unparsed needs --reviewer NAME: a confirmation must say who made it")
     store = DataStore(args.data_dir)
     if args.fields:
         return list_fields(store)
@@ -53,7 +61,9 @@ def main(argv=None):
         ap.print_help()
         return 2
     options = {"ai": "off" if args.rules else "own" if args.no_hosted else "auto", "provider": args.ai,
-               "fix": not args.no_fix, "accept_unparsed": args.accept_unparsed, "team": args.team}
+               "fix": not args.no_fix, "accept_unparsed": args.accept_unparsed, "team": args.team,
+               "reviewer": args.reviewer, "reviewer_role": args.reviewer_role, "review_note": args.review_note,
+               "outcome": args.outcome}
     if len(queries) == 1:
         run = build_cohort(queries[0], out_dir=args.out, store=store, log=print, **options)
         report(run, store)
