@@ -20,6 +20,7 @@ not set in advance.
 | Slides are of one kind | | the slide join mixes diagnostic and frozen slides | | |
 | Survival endpoint suits breast cancer | | overall survival is used or named as the outcome (TCGA-CDR advises caution for BRCA; PFI preferred) | | |
 | The outcome you named is recorded (only when an outcome is named) **(new after the event)** | recorded for ≥ 80% of cohort samples and, for a survival endpoint, at least 10 events | under 80% recorded, or fewer than 10 events | | the outcome's file isn't available, or no such field exists |
+| Each group you compare is large enough (only with `--compare-by`) **(new after the event)** | every group has ≥ 10 samples (≥ 10 events for a survival outcome) | a group is smaller than that, or there is only one group | | no such field, or its file isn't available |
 
 **Decision rule:** Blocked if any check fails. Insufficient Evidence if a fact the cohort depends on can't be
 confirmed. Conditional if any check raises a warning. Ready only when every check passes.

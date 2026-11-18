@@ -226,6 +226,21 @@ python -m cohort_studio "primary tumours with purity above 60%" --accept-unparse
     --reviewer "Your Name" --reviewer-role statistician --review-note "purity isn't in this release"
 ```
 
+Say what the analysis compares, and the cohort comes with its first analysis attached:
+
+```bash
+python -m cohort_studio "primary tumours with RNA" --outcome pfi --compare-by pam50
+python output/analysis_starter.py
+```
+
+`--compare-by` adds a check that every group has at least 10 samples (10 events for a survival outcome).
+`--analysis` (survival, compare_groups or describe) is inferred if left out. With either flag, the output also
+holds `analysis_plan.json` (the intent, the real columns, the cohort file and the checks that bear on it) and
+`analysis_starter.py`, which counts each group and, for survival, gives Kaplan-Meier medians. It tests nothing:
+choose and pre-specify the real analysis yourself. In the Streamlit app, "What is the cohort for?" sets the same
+three things, and "See the samples behind the counts" shows the samples at any step (kept or removed, with the
+reason, their characteristics and the raw values of every field used), searchable and downloadable.
+
 `--outcome` takes any field name that `--fields` lists (for example `pfi`, `os`, `er_status`). The reviewer's name,
 role, note and the date are saved in `cohort_spec.json` and quoted in the verdict. In the Streamlit app, the
 confirmation box asks for a name first. See [VERDICT_RULES.md](VERDICT_RULES.md) for both checks.

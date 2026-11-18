@@ -185,6 +185,19 @@ with st.expander("What each column means"):
         "- **one_per_patient**: `what` = priority (`value` = sample-type order, e.g. Primary Tumor, Metastatic), "
         "or earliest / latest (needs a clinical join and sample collection days in the release)")
 
+st.markdown("**What is the cohort for?** (optional) Naming the analysis adds checks for it, and the export "
+            "attaches an analysis plan and a starter script to the cohort.")
+use = dict(spec.get("intended_use") or {})
+ver = st.session_state.get("editor_version", 0)
+c1, c2, c3 = st.columns(3)
+outcome_in = c1.text_input("Outcome field", value=use.get("outcome", ""), placeholder="e.g. pfi, os, er_status",
+                           key=f"outcome_{ver}")
+compare_in = c2.text_input("Compare groups by", value=use.get("compare_by", ""), placeholder="e.g. pam50, stage",
+                           key=f"compare_{ver}")
+analysis_options = ["(infer)", "survival", "compare_groups", "describe"]
+analysis_in = c3.selectbox("Analysis", analysis_options,
+                           index=analysis_options.index(use.get("analysis", "(infer)")), key=f"analysis_{ver}")
+
 if st.button("Run the steps", type="primary"):
     steps, problems = table_to_steps(edited)
     if problems:
@@ -192,6 +205,13 @@ if st.button("Run the steps", type="primary"):
     else:
         new = dict(spec)
         new["steps"] = steps
+        new_use = {k: v.strip() for k, v in (("outcome", outcome_in), ("compare_by", compare_in)) if v.strip()}
+        if analysis_in != "(infer)":
+            new_use["analysis"] = analysis_in
+        if new_use:
+            new["intended_use"] = new_use
+        else:
+            new.pop("intended_use", None)
         run_spec(new, store)
 
 result = st.session_state.get("result")
@@ -233,6 +253,31 @@ for s in [s for s in result.steps if s.op == "one_per_patient" and not s.skipped
                     f"one sample at this step; here is what was kept for each, and why.")
         if len(selection):
             st.dataframe(selection[selection["step"] == s.index + 1], hide_index=True, width="stretch")
+
+# ---------------- 3b. the samples behind the counts ----------------
+with st.expander("See the samples behind the counts (raw data view)"):
+    step_names = ["The whole run: every starting sample, in the cohort or removed"] + [
+        f"Step {s.index + 1}: {s.label}" for s in result.steps]
+    pick = st.selectbox("Show", step_names, key="raw_view_step")
+    step_no = None if pick == step_names[0] else step_names.index(pick)
+    raw = exports.sample_view_frame(result, store, step=step_no)
+    if raw.empty:
+        st.caption("Nothing to show for this step.")
+    else:
+        statuses = sorted(raw["status"].dropna().unique())
+        f1, f2 = st.columns([1, 2])
+        keep = f1.multiselect("Status", statuses, default=statuses, key=f"raw_status_{pick}")
+        query = f2.text_input("Search (sample, patient, site or any value)", key=f"raw_search_{pick}")
+        shown = raw[raw["status"].isin(keep)]
+        if query.strip():
+            hit = shown.astype(str).apply(lambda col: col.str.contains(query.strip(), case=False, regex=False))
+            shown = shown[hit.any(axis=1)]
+        st.caption(f"{len(shown):,} of {len(raw):,} samples. Characteristics come from the frozen files; the last "
+                   "columns are the raw values of every field the steps and the stated analysis use. "
+                   "'(not recorded)' means the release has no value.")
+        st.dataframe(shown, width="stretch", hide_index=True)
+        st.download_button("Download this view (CSV)", shown.to_csv(index=False),
+                           file_name=f"samples_{'all' if step_no is None else f'step{step_no}'}.csv")
 
 # ---------------- 4. who was removed ----------------
 st.subheader("4 · Who did the steps remove?")
@@ -303,6 +348,11 @@ else:
         "sample_selection.csv": selection.to_csv(index=False),
         "coverage.csv": coverage.to_csv(index=False),
     }
+    from cohort_studio import intent
+    plan = intent.analysis_plan(result, v, store)
+    if plan:
+        files["analysis_plan.json"] = json.dumps(plan, indent=2, default=str)
+        files["analysis_starter.py"] = intent.starter_script(plan, "output")
     st.write(f"**{len(result.cohort_ids):,} samples** from {result.final_patients:,} patients.")
     cols = st.columns(3)
     for i, (name, content) in enumerate(files.items()):

@@ -134,9 +134,10 @@ def sign_off(reviewer, role=None, note=None):
     return out
 
 
-def _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome):
-    if outcome:
-        spec["intended_use"] = {**(spec.get("intended_use") or {}), "outcome": outcome}
+def _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome, compare_by=None, analysis=None):
+    use = {k: v for k, v in (("outcome", outcome), ("compare_by", compare_by), ("analysis", analysis)) if v}
+    if use:
+        spec["intended_use"] = {**(spec.get("intended_use") or {}), **use}
     if accept_unparsed:
         spec["unparsed_confirmed"] = True
         spec["sign_off"] = signed
@@ -145,13 +146,16 @@ def _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome):
 
 def build_cohort(query, out_dir="output", store=None, data_dir=None, ai="auto", fix=True, accept_unparsed=False,
                  team="Cohort Studio team", write=True, log=None, drafter=None, reviewer=None, reviewer_role=None,
-                 review_note=None, outcome=None, **ai_options):
+                 review_note=None, outcome=None, compare_by=None, analysis=None, **ai_options):
     """Draft (if needed), run, fix inflation, evaluate and export one cohort. ai: "auto", "own" or "off" (see
     llm.draft_spec); ai_options: provider, api_key, model, base_url or client for your own model. drafter: a
     function request -> (spec, route) used instead of llm.draft_spec (the hosted MCP server drafts on the server).
     accept_unparsed: confirm unused words and open readings; it needs reviewer (a name), recorded with the date,
     reviewer_role and review_note in the spec and quoted in the verdict. outcome: the field the cohort is meant for
-    (for example "pfi"), so the verdict checks it is recorded, with enough events, for the cohort."""
+    (for example "pfi"), so the verdict checks it is recorded, with enough events, for the cohort. compare_by: the
+    field the analysis compares groups by (for example "pam50"); the verdict checks each group is large enough.
+    analysis: survival | compare_groups | describe (inferred if left out). With any of these, analysis_plan.json and
+    analysis_starter.py are written beside the cohort."""
     signed = sign_off(reviewer, reviewer_role, review_note) if accept_unparsed else None
     store = store or DataStore(data_dir)
     kind, q = as_query(query)
@@ -161,14 +165,14 @@ def build_cohort(query, out_dir="output", store=None, data_dir=None, ai="auto", 
         spec, route = drafter(q)
     else:
         spec, route = draft_spec(q, store, ai=ai, log=log, **ai_options)
-    spec = _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome)
+    spec = _apply_use_and_sign_off(spec, accept_unparsed, signed, outcome, compare_by, analysis)
     spec, result, first, fixes = _run(spec, store, fix)
     if not result.ok and kind == "text" and route["used"] in ("own", "hosted"):
         # The AI draft passed the checks but a step failed on this computer's data: draft it with the parser instead.
         error = next((s.error for s in result.steps if s.error), "a step failed")
         rules = parse_request(q, store)
         rules["notes"].append(f"The AI draft didn't run here ({error}), so the built-in parser drafted the steps.")
-        rules = _apply_use_and_sign_off(rules, accept_unparsed, signed, outcome)
+        rules = _apply_use_and_sign_off(rules, accept_unparsed, signed, outcome, compare_by, analysis)
         r_spec, r_result, r_first, r_fixes = _run(rules, store, fix)
         if r_result.ok:
             spec, result, first, fixes = r_spec, r_result, r_first, r_fixes

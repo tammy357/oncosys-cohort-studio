@@ -112,3 +112,45 @@ def test_versions_are_recorded(store, tmp_path):
     run = api.build_cohort("primary tumours", store=store, ai="off", out_dir=tmp_path)
     env = json.loads((tmp_path / "cohort_spec.json").read_text())["environment"]
     assert env["python"] and env["pandas"]
+
+
+# ---------- Luke's feedback: analytical intent with groups, an attached plan, and a raw data view ----------
+def test_compare_by_adds_group_check_and_plan(store, tmp_path):
+    run = api.build_cohort("primary tumours", store=store, ai="off", outcome="pfi", compare_by="pam50",
+                           out_dir=tmp_path)
+    c = check(run.verdict, "Each group you compare is large enough")
+    assert c is not None and "events" in c.detail
+    plan = json.loads((tmp_path / "analysis_plan.json").read_text())
+    assert plan["analysis"] == "survival" and plan["time"]["column"] == "PFI.time"
+    assert (tmp_path / "analysis_starter.py").exists()
+
+
+def test_starter_script_runs(store, tmp_path):
+    import subprocess
+    api.build_cohort("primary tumours", store=store, ai="off", outcome="pfi", compare_by="pam50", out_dir=tmp_path)
+    done = subprocess.run([sys.executable, str(tmp_path / "analysis_starter.py")], cwd=ROOT, capture_output=True,
+                          text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert "median time" in done.stdout
+
+
+def test_unknown_compare_field_is_insufficient(store, tmp_path):
+    run = api.build_cohort("primary tumours", store=store, ai="off", compare_by="no_such_field", out_dir=tmp_path)
+    assert check(run.verdict, "Each group you compare is large enough").status == "unknown"
+
+
+def test_no_intent_no_plan(store, tmp_path):
+    api.build_cohort("primary tumours", store=store, ai="off", out_dir=tmp_path)
+    assert not (tmp_path / "analysis_plan.json").exists()
+
+
+def test_raw_view_whole_run_and_one_step(store):
+    run = api.build_cohort("primary tumours with ER positive", store=store, ai="off", write=False, outcome="pfi")
+    whole = exports.sample_view_frame(run.result, store)
+    assert set(whole["status"]) >= {"in cohort", "removed"}
+    assert "PFI" in whole.columns and "Submitting site" in whole.columns
+    step2 = exports.sample_view_frame(run.result, store, step=2)
+    removed = step2[step2["status"] == "removed at step 2"]
+    assert len(step2) == run.result.steps[1].samples_in
+    assert len(removed) == len(run.result.steps[1].removed)
+    assert (removed["reason"] != "").all()

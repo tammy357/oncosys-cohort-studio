@@ -38,6 +38,11 @@ def main(argv=None):
     ap.add_argument("--review-note", help="what they checked")
     ap.add_argument("--outcome", help="the field the cohort is for, e.g. pfi, os or er_status: the verdict checks it is "
                                       "recorded (and, for survival, has enough events) for this cohort")
+    ap.add_argument("--compare-by", help="the field the analysis compares groups by, e.g. pam50: the verdict checks "
+                                         "every group is large enough")
+    ap.add_argument("--analysis", choices=["survival", "compare_groups", "describe"],
+                    help="the kind of analysis (inferred if left out); with --outcome or --compare-by, writes "
+                         "analysis_plan.json and analysis_starter.py beside the cohort")
     ap.add_argument("--rules", action="store_true", help="built-in parser only: no AI, nothing leaves this computer")
     ap.add_argument("--no-hosted", action="store_true", help="your own key or local model only, never the hosted service")
     ap.add_argument("--ai", choices=["anthropic", "openai"], help="which provider your own key is for (default: "
@@ -63,7 +68,7 @@ def main(argv=None):
     options = {"ai": "off" if args.rules else "own" if args.no_hosted else "auto", "provider": args.ai,
                "fix": not args.no_fix, "accept_unparsed": args.accept_unparsed, "team": args.team,
                "reviewer": args.reviewer, "reviewer_role": args.reviewer_role, "review_note": args.review_note,
-               "outcome": args.outcome}
+               "outcome": args.outcome, "compare_by": args.compare_by, "analysis": args.analysis}
     if len(queries) == 1:
         run = build_cohort(queries[0], out_dir=args.out, store=store, log=print, **options)
         report(run, store)
@@ -134,7 +139,11 @@ def report(run, store):
         print("\n!! A step failed, so cohort_samples.csv is empty. Fix the step (see above) and run again.")
     print(f"\nWrote {len(result.cohort_ids)} samples to {run.out_dir / 'cohort_samples.csv'} "
           f"(plus reproduce_cohort.py, cohort_spec.json, ledger.csv, exclusions.csv, audit_trail.csv, "
-          f"sample_selection.csv, coverage.csv, verdict.json, findings.json)")
+          f"sample_selection.csv, coverage.csv, verdict.json, findings.json"
+          + (", analysis_plan.json, analysis_starter.py" if (run.out_dir / "analysis_plan.json").exists() else "")
+          + ")")
+    if (run.out_dir / "analysis_plan.json").exists():
+        print(f"First look at the stated analysis: python {run.out_dir / 'analysis_starter.py'}")
 
 
 def print_ledger(result):

@@ -103,6 +103,56 @@ def audit_trail_frame(result):
     return frame.sort_values(["removed_at_step", "sample_id"], na_position="first")
 
 
+def sample_view_frame(result, store, step=None):
+    """The samples behind the counts, with their key characteristics and the values of every field the steps and
+    the intent use. step=None: every sample the run started from (in cohort, or the step that removed it).
+    step=N: the samples that entered step N, marked kept or removed there, with the reason."""
+    trail = audit_trail_frame(result)
+    if trail.empty:
+        return trail
+    if step is None:
+        view = trail[["sample_id", "patient_id", "outcome", "removed_at_step", "step", "reason"]].rename(
+            columns={"outcome": "status", "step": "removed by"})
+    else:
+        removed_at = trail["removed_at_step"]
+        entered = trail[(trail["outcome"] == "in cohort") | (removed_at >= step)]
+        view = entered[["sample_id", "patient_id"]].copy()
+        here = (entered["removed_at_step"] == step).fillna(False).astype(bool)
+        view["status"] = here.map({True: f"removed at step {step}", False: "kept"})
+        view["reason"] = entered["reason"].where(here, "")
+        view = view.assign(_o=~here.values).sort_values(["_o", "sample_id"]).drop(columns="_o")
+    comp = store.composition_frame().drop(columns=["patient_id"], errors="ignore")
+    view = view.join(comp, on="sample_id")
+    fields = []
+    for s in result.spec.get("steps", []):
+        if s.get("table") in ("clinical", "survival") and s.get("field"):
+            fields.append((s["table"], s["field"]))
+        for c in s.get("conditions", []) or []:
+            if c.get("table") in ("clinical", "survival") and c.get("field"):
+                fields.append((c["table"], c["field"]))
+    from . import intent
+    use = result.spec.get("intended_use") or {}
+    for key in ("outcome", "compare_by"):
+        if use.get(key):
+            fields.append((intent.table_for(store, use[key]), use[key]))
+    if use.get("outcome") in intent.SURVIVAL_EVENTS:
+        fields.append(("survival", intent.SURVIVAL_EVENTS[use["outcome"]]))
+    seen = set(view.columns)
+    for table, field in fields:
+        if not table or not store.available(table):
+            continue
+        col = store.resolve_field(table, field)
+        if not col or col in seen:
+            continue
+        t = store.table(table)
+        if "sample_id" not in t.columns or col not in t.columns:
+            continue
+        values = t.drop_duplicates("sample_id").set_index("sample_id")[col]
+        view[col] = view["sample_id"].map(values)
+        seen.add(col)
+    return view.reset_index(drop=True)
+
+
 def cohort_frame(result):
     return pd.DataFrame({"sample_id": result.cohort_ids})
 
@@ -392,4 +442,6 @@ def write_all(result, verdict, store, out_dir, team="Cohort Studio team"):
     (out / "verdict.json").write_text(json.dumps(verdict.to_dict(), indent=2))
     (out / "reproduce_cohort.py").write_text(reproduce_script(result, store))
     (out / "findings.json").write_text(json.dumps(findings_document(result, verdict, store, team), indent=2))
+    from . import intent
+    intent.write(result, verdict, store, out)
     return out

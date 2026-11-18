@@ -343,6 +343,10 @@ def evaluate(result, store):
     # 10. The stated outcome: is it recorded, with enough events, for this cohort?
     if use.get("outcome"):
         checks.append(outcome_check(use, result, store, n_ids))
+    # 11. The groups the cohort will be compared across: is each one large enough?
+    if use.get("compare_by"):
+        from .intent import groups_check
+        checks.append(groups_check(use, result, store, Check))
     return _decide(checks, result, store)
 
 
@@ -402,6 +406,7 @@ PROBLEM_HEADLINES = {
     "Slides are of one kind": "Diagnostic and frozen slides are mixed",
     "Survival endpoint suits breast cancer": "The survival endpoint needs care for breast cancer",
     "The outcome you named is recorded for the cohort": "The outcome is missing or rare in this cohort",
+    "Each group you compare is large enough": "A group you compare is too small",
 }
 
 
